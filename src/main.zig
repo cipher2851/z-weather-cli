@@ -20,12 +20,14 @@ pub fn main() !void {
             lon = args[i + 2];
             location_name = "specified coordinates";
             break;
-        } else if (i + 2 < args.len) {
-            // Handle positional args as lat/lon if they look like numbers
-            lat = args[i];
-            lon = args[i + 1];
-            location_name = "specified coordinates";
-            break;
+        } else if (i >= 1 && i + 1 < args.len) {
+            // Handle positional args as lat/lon (skipping executable path)
+            if (i == 1) {
+                lat = args[1];
+                lon = args[2];
+                location_name = "specified coordinates";
+                break;
+            }
         }
     }
 
@@ -52,16 +54,36 @@ pub fn main() !void {
         try response_body.appendSlice(chunk);
     }
 
-    // Simple manual parsing of the JSON for current_weather
     const body = response_body.items;
+    
+    // Helper to extract value by key from simple JSON
+    fn extractValue(body: []const u8, key: []const u8) []const u8 {
+        const key_pattern = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
+        defer std.heap.page_allocator.free(key_pattern);
+        
+        const start_idx = std.mem.indexOf(u8, body, key_pattern) orelse return "";
+        const value_start = start_idx + key_pattern.len;
+        
+        var end_idx: usize = value_start;
+        while (end_idx < body.len) {
+            const char = body[end_idx];
+            if (char == ',' or char == '}' or char == ' ') {
+                break;
+            }
+            end_idx += 1;
+        }
+        return body[value_start..end_idx];
+    }
+
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
-        const start_idx = std.mem.indexOf(u8, body, "\"temperature\":") orelse 0;
-        const temp_start = std.mem.indexOf(u8, body[start_idx..], ",") orelse 0;
-        // This is a very naive parser for demonstration purposes
-        // In a production app, we would use a proper JSON library like zig-json
-        std.debug.print("Weather data received successfully!\n", .{});
-        std.debug.print("Raw Body: {s}\n", .{body});
-        std.debug.print("Check the 'current_weather' object for temperature and windspeed.\n", .{});
+        const temp = extractValue(body, "temperature");
+        const wind = extractValue(body, "windspeed");
+        
+        std.debug.print("\n--- Weather Report ---\n", .{});
+        std.debug.print("Location: {s}\n", .{location_name});
+        std.debug.print("Temperature: {s}°C\n", .{temp});
+        std.debug.print("Windspeed: {s} km/h\n", .{wind});
+        std.debug.print("---------------------\n", .{});
     } else {
         std.debug.print("Failed to find weather data in response.\n", .{});
         std.debug.print("Response: {s}\n", .{body});
