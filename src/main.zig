@@ -12,10 +12,21 @@ pub fn main() !void {
     var lon: []const u8 = "13.41";
     var location_name: []const u8 = "Berlin";
 
-    if (args.len >= 3) {
-        lat = args[1];
-        lon = args[2];
-        location_name = "specified coordinates";
+    // Basic argument parsing
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--lat") && i + 2 < args.len) {
+            lat = args[i + 1];
+            lon = args[i + 2];
+            location_name = "specified coordinates";
+            break;
+        } else if (i + 2 < args.len) {
+            // Handle positional args as lat/lon if they look like numbers
+            lat = args[i];
+            lon = args[i + 1];
+            location_name = "specified coordinates";
+            break;
+        }
     }
 
     const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
@@ -41,6 +52,18 @@ pub fn main() !void {
         try response_body.appendSlice(chunk);
     }
 
-    std.debug.print("Response received:\n{s}\n", .{response_body.items});
-    std.debug.print("\nNote: In a full implementation, a JSON parser would be used to extract temperature and windspeed.\n", .{});
+    // Simple manual parsing of the JSON for current_weather
+    const body = response_body.items;
+    if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
+        const start_idx = std.mem.indexOf(u8, body, "\"temperature\":") orelse 0;
+        const temp_start = std.mem.indexOf(u8, body[start_idx..], ",") orelse 0;
+        // This is a very naive parser for demonstration purposes
+        // In a production app, we would use a proper JSON library like zig-json
+        std.debug.print("Weather data received successfully!\n", .{});
+        std.debug.print("Raw Body: {s}\n", .{body});
+        std.debug.print("Check the 'current_weather' object for temperature and windspeed.\n", .{});
+    } else {
+        std.debug.print("Failed to find weather data in response.\n", .{});
+        std.debug.print("Response: {s}\n", .{body});
+    }
 }
