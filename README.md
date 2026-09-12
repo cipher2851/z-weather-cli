@@ -7,7 +7,11 @@ A simple weather CLI written in Zig.
 
 ## Usage
 ```bash
+# Fetch default weather (Berlin)
 zig build run
+
+# Fetch weather for specific coordinates (lat lon)
+zig build run -- --lat 40.71 -74.00
 ```
 
-Currently, the tool fetches raw JSON data for Berlin from the Open-Meteo API to demonstrate HTTP capabilities in Zig.
+Currently, the tool fetches raw JSON data from the Open-Meteo API to demonstrate HTTP capabilities in Zig.
