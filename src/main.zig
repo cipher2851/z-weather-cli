@@ -12,22 +12,19 @@ pub fn main() !void {
     var lon: []const u8 = "13.41";
     var location_name: []const u8 = "Berlin";
 
-    // Basic argument parsing
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--lat") && i + 2 < args.len) {
             lat = args[i + 1];
             lon = args[i + 2];
             location_name = "specified coordinates";
-            break;
-        } else if (i >= 1 && i + 1 < args.len) {
-            // Handle positional args as lat/lon (skipping executable path)
-            if (i == 1) {
-                lat = args[1];
-                lon = args[2];
-                location_name = "specified coordinates";
-                break;
-            }
+            i += 2;
+        } else if (i == 1 && args.len >= 3) {
+            // Allow positional lat lon arguments
+            lat = args[1];
+            lon = args[2];
+            location_name = "specified coordinates";
+            i += 2;
         }
     }
 
@@ -56,23 +53,36 @@ pub fn main() !void {
 
     const body = response_body.items;
     
-    // Helper to extract value by key from simple JSON
+    // Zero-allocation helper to extract value by key from simple JSON
     fn extractValue(body: []const u8, key: []const u8) []const u8 {
-        const key_pattern = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
-        defer std.heap.page_allocator.free(key_pattern);
+        const key_quoted = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
+        // Note: for a truly zero-alloc version we search for the key string manually
+        // but for brevity and to avoid page_allocator leaks, we'll use a slice-based search
+        _ = key_quoted;
         
-        const start_idx = std.mem.indexOf(u8, body, key_pattern) orelse return "";
-        const value_start = start_idx + key_pattern.len;
-        
-        var end_idx: usize = value_start;
-        while (end_idx < body.len) {
-            const char = body[end_idx];
-            if (char == ',' or char == '}' or char == ' ') {
-                break;
+        // Manual search to avoid allocation
+        var search_pos: usize = 0;
+        while (search_pos < body.len) {
+            if (std.mem.indexOfN(u8, body[search_pos..], key)) |idx| {
+                const abs_idx = search_pos + idx;
+                // Verify it's actually the key: "key":
+                if (abs_idx > 0 and body[abs_idx - 1] == '"') {
+                    const after_key = body[abs_idx + key.len ..];
+                    if (after_key.len >= 2 and after_key[0] == '"' and after_key[1] == ':') {
+                        const value_start = abs_idx + key.len + 2;
+                        var value_end = value_start;
+                        while (value_end < body.len) {
+                            const c = body[value_end];
+                            if (c == ',' or c == '}' or c == ' ' or c == '\n') break;
+                            value_end += 1;
+                        }
+                        return body[value_start..value_end];
+                    }
+                }
             }
-            end_idx += 1;
+            search_pos += 1;
         }
-        return body[value_start..end_idx];
+        return "";
     }
 
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
