@@ -55,12 +55,6 @@ pub fn main() !void {
     
     // Zero-allocation helper to extract value by key from simple JSON
     fn extractValue(body: []const u8, key: []const u8) []const u8 {
-        const key_quoted = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
-        // Note: for a truly zero-alloc version we search for the key string manually
-        // but for brevity and to avoid page_allocator leaks, we'll use a slice-based search
-        _ = key_quoted;
-        
-        // Manual search to avoid allocation
         var search_pos: usize = 0;
         while (search_pos < body.len) {
             if (std.mem.indexOfN(u8, body[search_pos..], key)) |idx| {
@@ -68,15 +62,31 @@ pub fn main() !void {
                 // Verify it's actually the key: "key":
                 if (abs_idx > 0 and body[abs_idx - 1] == '"') {
                     const after_key = body[abs_idx + key.len ..];
-                    if (after_key.len >= 2 and after_key[0] == '"' and after_key[1] == ':') {
-                        const value_start = abs_idx + key.len + 2;
-                        var value_end = value_start;
-                        while (value_end < body.len) {
-                            const c = body[value_end];
-                            if (c == ',' or c == '}' or c == ' ' or c == '\n') break;
-                            value_end += 1;
+                    if (after_key.len >= 1 and after_key[0] == '"') {
+                        // This is a string key, check for colon
+                        var colon_idx: usize = 0;
+                        while (colon_idx < after_key.len) {
+                            if (after_key[colon_idx] == ':') break;
+                            colon_idx += 1;
                         }
-                        return body[value_start..value_end];
+                        if (colon_idx < after_key.len) {
+                            var val_start = colon_idx + 1;
+                            while (val_start < after_key.len and (after_key[val_start] == ' ' or after_key[val_start] == '\t')) {
+                                val_start += 1;
+                            }
+                            var val_end = val_start;
+                            while (val_end < after_key.len) {
+                                const c = after_key[val_end];
+                                if (c == ',' or c == '}' or c == ']' or c == '\n') break;
+                                val_end += 1;
+                            }
+                            // Trim quotes if it's a string
+                            var result = after_key[val_start..val_end];
+                            if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
+                                result = result[1..result.len - 1];
+                            }
+                            return result;
+                        }
                     }
                 }
             }
