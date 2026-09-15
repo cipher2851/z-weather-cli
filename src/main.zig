@@ -19,8 +19,8 @@ pub fn main() !void {
             lon = args[i + 2];
             location_name = "specified coordinates";
             i += 2;
-        } else if (i == 1 && args.len >= 3) {
-            // Allow positional lat lon arguments
+        } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--lat")) {
+            // Allow positional lat lon arguments if not using --lat
             lat = args[1];
             lon = args[2];
             location_name = "specified coordinates";
@@ -53,44 +53,38 @@ pub fn main() !void {
 
     const body = response_body.items;
     
-    // Zero-allocation helper to extract value by key from simple JSON
+    // Robust helper to extract value by key from simple JSON
     fn extractValue(body: []const u8, key: []const u8) []const u8 {
-        var search_pos: usize = 0;
-        while (search_pos < body.len) {
-            if (std.mem.indexOfN(u8, body[search_pos..], key)) |idx| {
-                const abs_idx = search_pos + idx;
-                // Verify it's actually the key: "key":
-                if (abs_idx > 0 and body[abs_idx - 1] == '"') {
-                    const after_key = body[abs_idx + key.len ..];
-                    if (after_key.len >= 1 and after_key[0] == '"') {
-                        // This is a string key, check for colon
-                        var colon_idx: usize = 0;
-                        while (colon_idx < after_key.len) {
-                            if (after_key[colon_idx] == ':') break;
-                            colon_idx += 1;
-                        }
-                        if (colon_idx < after_key.len) {
-                            var val_start = colon_idx + 1;
-                            while (val_start < after_key.len and (after_key[val_start] == ' ' or after_key[val_start] == '\t')) {
-                                val_start += 1;
-                            }
-                            var val_end = val_start;
-                            while (val_end < after_key.len) {
-                                const c = after_key[val_end];
-                                if (c == ',' or c == '}' or c == ']' or c == '\n') break;
-                                val_end += 1;
-                            }
-                            // Trim quotes if it's a string
-                            var result = after_key[val_start..val_end];
-                            if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
-                                result = result[1..result.len - 1];
-                            }
-                            return result;
-                        }
-                    }
-                }
+        const key_pattern = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
+        defer std.heap.page_allocator.free(key_pattern);
+
+        if (std.mem.indexOf(u8, body, key_pattern)) |start_idx| {
+            var val_start = start_idx + key_pattern.len;
+            
+            // Skip whitespace
+            while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r')) {
+                val_start += 1;
             }
-            search_pos += 1;
+
+            if (val_start >= body.len) return "";
+
+            var val_end = val_start;
+            while (val_end < body.len) {
+                const c = body[val_end];
+                if (c == ',' or c == '}' or c == ']' or c == '\n' or c == '\r') break;
+                val_end += 1;
+            }
+
+            var result = body[val_start..val_end];
+            // Trim potential trailing spaces
+            while (result.len > 0 and (result[result.len - 1] == ' ' or result[result.len - 1] == '\t')) {
+                result = result[0..result.len - 1];
+            }
+            // Trim quotes for string values
+            if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
+                result = result[1..result.len - 1];
+            }
+            return result;
         }
         return "";
     }
