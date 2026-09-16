@@ -55,36 +55,55 @@ pub fn main() !void {
     
     // Robust helper to extract value by key from simple JSON
     fn extractValue(body: []const u8, key: []const u8) []const u8 {
-        const key_pattern = try std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{key});
-        defer std.heap.page_allocator.free(key_pattern);
+        // Search for "key":
+        if (std.mem.indexOf(u8, body, "\"") ) |first_quote| {
+            var i = first_quote;
+            while (i < body.len) {
+                if (std.mem.indexOf(u8, body[i..], "\"") ) |rel_start| {
+                    const abs_start = i + rel_start;
+                    const end_quote_rel = std.mem.indexOf(u8, body[abs_start + 1..], "\"") orelse break;
+                    const abs_end = abs_start + 1 + end_quote_rel;
+                    
+                    if (std.mem.eql(u8, body[abs_start + 1..abs_end], key)) {
+                        var val_start = abs_end + 1;
+                        
+                        // Find the colon
+                        while (val_start < body.len and body[val_start] != ':') {
+                            val_start += 1;
+                        }
+                        if (val_start >= body.len) return "";
+                        val_start += 1; // skip ':'
 
-        if (std.mem.indexOf(u8, body, key_pattern)) |start_idx| {
-            var val_start = start_idx + key_pattern.len;
-            
-            // Skip whitespace
-            while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r')) {
-                val_start += 1;
-            }
+                        // Skip whitespace
+                        while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r')) {
+                            val_start += 1;
+                        }
 
-            if (val_start >= body.len) return "";
+                        if (val_start >= body.len) return "";
 
-            var val_end = val_start;
-            while (val_end < body.len) {
-                const c = body[val_end];
-                if (c == ',' or c == '}' or c == ']' or c == '\n' or c == '\r') break;
-                val_end += 1;
-            }
+                        var val_end = val_start;
+                        while (val_end < body.len) {
+                            const c = body[val_end];
+                            if (c == ',' or c == '}' or c == ']' or c == '\n' or c == '\r') break;
+                            val_end += 1;
+                        }
 
-            var result = body[val_start..val_end];
-            // Trim potential trailing spaces
-            while (result.len > 0 and (result[result.len - 1] == ' ' or result[result.len - 1] == '\t')) {
-                result = result[0..result.len - 1];
+                        var result = body[val_start..val_end];
+                        // Trim potential trailing spaces
+                        while (result.len > 0 and (result[result.len - 1] == ' ' or result[result.len - 1] == '\t')) {
+                            result = result[0..result.len - 1];
+                        }
+                        // Trim quotes for string values
+                        if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
+                            result = result[1..result.len - 1];
+                        }
+                        return result;
+                    }
+                    i = abs_end + 1;
+                } else {
+                    break;
+                }
             }
-            // Trim quotes for string values
-            if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
-                result = result[1..result.len - 1];
-            }
-            return result;
         }
         return "";
     }
