@@ -59,6 +59,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    const stdout = std.io.getStdOut().writer();
+
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -84,7 +86,7 @@ pub fn main() !void {
     const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
     defer allocator.free(url);
 
-    std.debug.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+    try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
 
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
@@ -110,13 +112,13 @@ pub fn main() !void {
         const temp = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
         
-        std.debug.print("\n--- Weather Report ---\n", .{});
-        std.debug.print("Location    : {s}\n", .{location_name});
-        std.debug.print("Temperature : {s}°C\n", .{temp});
-        std.debug.print("Windspeed   : {s} km/h\n", .{wind});
-        std.debug.print("---------------------\n", .{});
+        try stdout.print("\n--- Weather Report ---\n", .{});
+        try stdout.print("Location    : {s}\n", .{location_name});
+        try stdout.print("Temperature : {s}°C\n", .{temp});
+        try stdout.print("Windspeed   : {s} km/h\n", .{wind});
+        try stdout.print("---------------------\n", .{});
     } else {
-        std.debug.print("Failed to find weather data in response.\n", .{});
-        std.debug.print("Response: {s}\n", .{body});
+        try stdout.print("Failed to find weather data in response.\n", .{});
+        try stdout.print("Response: {s}\n", .{body});
     }
 }
