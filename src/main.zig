@@ -99,6 +99,11 @@ pub fn main() !void {
     try request.send();
     try request.wait();
 
+    if (request.response.status != .ok) {
+        try stdout.print("API Error: Received status code {d}\n", .{ @intFromEnum(request.response.status) });
+        return;
+    }
+
     var response_body = std.ArrayList(u8).init(allocator);
     defer response_body.deinit();
 
@@ -112,11 +117,13 @@ pub fn main() !void {
         const temp = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
         
-        try stdout.print("\n--- Weather Report ---\n", .{});
-        try stdout.print("Location    : {s}\n", .{location_name});
-        try stdout.print("Temperature : {s}°C\n", .{temp});
-        try stdout.print("Windspeed   : {s} km/h\n", .{wind});
-        try stdout.print("---------------------\n", .{});
+        try stdout.print("\n┌──────────────────────────────────┐\n", .{});
+        try stdout.print("│       WEATHER REPORT             │\n", .{});
+        try stdout.print("├──────────────────────────────────┤\n", .{});
+        try stdout.print("│ Location    : {s:<20} │\n", .{location_name});
+        try stdout.print("│ Temperature : {s:<20} °C │\n", .{temp});
+        try stdout.print("│ Windspeed   : {s:<20} km/h │\n", .{wind});
+        try stdout.print("└──────────────────────────────────┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
