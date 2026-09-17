@@ -14,4 +14,4 @@ zig build run
 zig build run -- --lat 40.71 -74.00
 ```
 
-Currently, the tool fetches real-time data from the Open-Meteo API to demonstrate HTTP capabilities and JSON parsing in Zig.
+Currently, the tool fetches real-time data from the Open-Meteo API to demonstrate HTTP capabilities and JSON parsing in Zig. It provides information on temperature, wind speed, and current weather conditions.

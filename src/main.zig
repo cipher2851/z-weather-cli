@@ -1,5 +1,21 @@
 const std = @import("std");
 
+/// Maps WMO Weather interpretation codes to human-readable strings
+fn getWeatherCondition(code: []const u8) []const u8 {
+    if (std.mem.eql(u8, code, "0")) return "Clear sky";
+    if (std.mem.eql(u8, code, "1")) return "Mainly clear";
+    if (std.mem.eql(u8, code, "2")) return "Partly cloudy";
+    if (std.mem.eql(u8, code, "3")) return "Overcast";
+    if (std.mem.eql(u8, code, "45")) return "Foggy";
+    if (std.mem.eql(u8, code, "48")) return "Depositing rime fog";
+    if (std.mem.eql(u8, code, "51")) return "Light drizzle";
+    if (std.mem.eql(u8, code, "61")) return "Slight rain";
+    if (std.mem.eql(u8, code, "71")) return "Slight snow";
+    if (std.mem.eql(u8, code, "80")) return "Slight rain showers";
+    if (std.mem.eql(u8, code, "95")) return "Thunderstorm";
+    return "Unknown";
+}
+
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
     if (std.mem.indexOf(u8, body, "\"") ) |first_quote| {
@@ -126,11 +142,14 @@ pub fn main() !void {
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
         const temp = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
+        const code = extractValue(body, "weathercode");
+        const condition = getWeatherCondition(code);
         
         try stdout.print("\n┌──────────────────────────────────┐\n", .{});
         try stdout.print("│       WEATHER REPORT             │\n", .{});
         try stdout.print("├──────────────────────────────────┤\n", .{});
         try stdout.print("│ Location    : {s:<20} │\n", .{location_name});
+        try stdout.print("│ Condition   : {s:<20} │\n", .{condition});
         try stdout.print("│ Temperature : {s:<20} °C │\n", .{temp});
         try stdout.print("│ Windspeed   : {s:<20} km/h │\n", .{wind});
         try stdout.print("└──────────────────────────────────┘\n", .{});
