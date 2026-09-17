@@ -68,18 +68,28 @@ pub fn main() !void {
     var lon: []const u8 = "13.41";
     var location_name: []const u8 = "Berlin";
 
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        if (std.mem.eql(u8, args[i], "--lat") && i + 2 < args.len) {
-            lat = args[i + 1];
-            lon = args[i + 2];
-            location_name = "specified coordinates";
-            i += 2;
-        } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--lat")) {
-            lat = args[1];
-            lon = args[2];
-            location_name = "specified coordinates";
-            i += 2;
+    if (args.len > 1) {
+        if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --lat <lat> <lon>  Specify latitude and longitude\n  --help, -h         Show this help message\n\nExample:\n  z-weather-cli --lat 40.71 -74.00\n", .{});
+            return;
+        }
+
+        var i: usize = 1;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--lat") && i + 2 < args.len) {
+                lat = args[i + 1];
+                lon = args[i + 2];
+                location_name = "specified coordinates";
+                i += 2;
+            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--lat")) {
+                lat = args[1];
+                lon = args[2];
+                location_name = "specified coordinates";
+                i += 2;
+            } else {
+                try stdout.print("Unknown argument: {s}. Use --help for usage.\n", .{args[i]});
+                return;
+            }
         }
     }
 
