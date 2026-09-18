@@ -151,6 +151,10 @@ pub fn main() !void {
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
         
+        const time = std.time.timestamp();
+        var time_buf: [64]u8 = undefined;
+        const time_str = try std.fmt.bufPrint(&time_buf, "{d}", .{time});
+
         try stdout.print("\n┌──────────────────────────────────────┐\n", .{});
         try stdout.print("│          WEATHER REPORT               │\n", .{});
         try stdout.print("├──────────────────────────────────────┤\n", .{});
@@ -158,13 +162,14 @@ pub fn main() !void {
         try stdout.print("│ Condition   : {s:<24} │\n", .{condition});
         
         var temp_buf: [32]u8 = undefined;
-        const temp_str = try std.fmt.bufPrint(&temp_buf, "{s} °C", .{temp});
-        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_str});
+        const temp_formatted = try std.fmt.bufPrint(&temp_buf, "{s} °C", .{temp});
+        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_formatted});
         
         var wind_buf: [32]u8 = undefined;
-        const wind_str = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
-        try stdout.print("│ Windspeed   : {s:<24} │\n", .{wind_str});
+        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
+        try stdout.print("│ Windspeed   : {s:<24} │\n", .{wind_formatted});
         
+        try stdout.print("│ Updated     : {s:<24} │\n", .{time_str});
         try stdout.print("└──────────────────────────────────────┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
