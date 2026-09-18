@@ -7,11 +7,17 @@ fn getWeatherCondition(code: []const u8) []const u8 {
     if (std.mem.eql(u8, code, "2")) return "Partly cloudy";
     if (std.mem.eql(u8, code, "3")) return "Overcast";
     if (std.mem.eql(u8, code, "45")) return "Foggy";
-    if (std.mem.eql(u8, code, "48")) return "Depositing rime fog";
+    if (std.mem.eql(u8, code, "48")) return "Rime fog";
     if (std.mem.eql(u8, code, "51")) return "Light drizzle";
     if (std.mem.eql(u8, code, "61")) return "Slight rain";
+    if (std.mem.eql(u8, code, "63")) return "Moderate rain";
+    if (std.mem.eql(u8, code, "65")) return "Heavy rain";
     if (std.mem.eql(u8, code, "71")) return "Slight snow";
+    if (std.mem.eql(u8, code, "73")) return "Moderate snow";
+    if (std.mem.eql(u8, code, "75")) return "Heavy snow";
     if (std.mem.eql(u8, code, "80")) return "Slight rain showers";
+    if (std.mem.eql(u8, code, "81")) return "Moderate rain showers";
+    if (std.mem.eql(u8, code, "82")) return "Violent rain showers";
     if (std.mem.eql(u8, code, "95")) return "Thunderstorm";
     return "Unknown";
 }
@@ -145,14 +151,14 @@ pub fn main() !void {
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
         
-        try stdout.print("\n┌──────────────────────────────────┐\n", .{});
-        try stdout.print("│       WEATHER REPORT             │\n", .{});
-        try stdout.print("├──────────────────────────────────┤\n", .{});
-        try stdout.print("│ Location    : {s:<20} │\n", .{location_name});
-        try stdout.print("│ Condition   : {s:<20} │\n", .{condition});
-        try stdout.print("│ Temperature : {s:<20} °C │\n", .{temp});
-        try stdout.print("│ Windspeed   : {s:<20} km/h │\n", .{wind});
-        try stdout.print("└──────────────────────────────────┘\n", .{});
+        try stdout.print("\n┌──────────────────────────────────────┐\n", .{});
+        try stdout.print("│          WEATHER REPORT               │\n", .{});
+        try stdout.print("├──────────────────────────────────────┤\n", .{});
+        try stdout.print("│ Location    : {s:<24} │\n", .{location_name});
+        try stdout.print("│ Condition   : {s:<24} │\n", .{condition});
+        try stdout.print("│ Temperature : {s:<24} │\n", .{std.fmt.allocPrint(allocator, "{s} °C", .{temp}) catch temp});
+        try stdout.print("│ Windspeed   : {s:<24} │\n", .{std.fmt.allocPrint(allocator, "{s} km/h", .{wind}) catch wind});
+        try stdout.print("└──────────────────────────────────────┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
