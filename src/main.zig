@@ -103,7 +103,7 @@ pub fn main() !void {
                 lon = args[i + 2];
                 location_name = "specified coordinates";
                 i += 2;
-            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--lat")) {
+            } else if (i == 1 && args.len >= 3) {
                 lat = args[1];
                 lon = args[2];
                 location_name = "specified coordinates";
@@ -156,8 +156,15 @@ pub fn main() !void {
         try stdout.print("├──────────────────────────────────────┤\n", .{});
         try stdout.print("│ Location    : {s:<24} │\n", .{location_name});
         try stdout.print("│ Condition   : {s:<24} │\n", .{condition});
-        try stdout.print("│ Temperature : {s:<24} │\n", .{std.fmt.allocPrint(allocator, "{s} °C", .{temp}) catch temp});
-        try stdout.print("│ Windspeed   : {s:<24} │\n", .{std.fmt.allocPrint(allocator, "{s} km/h", .{wind}) catch wind});
+        
+        var temp_buf: [32]u8 = undefined;
+        const temp_str = try std.fmt.bufPrint(&temp_buf, "{s} °C", .{temp});
+        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_str});
+        
+        var wind_buf: [32]u8 = undefined;
+        const wind_str = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
+        try stdout.print("│ Windspeed   : {s:<24} │\n", .{wind_str});
+        
         try stdout.print("└──────────────────────────────────────┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
