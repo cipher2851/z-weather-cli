@@ -89,10 +89,11 @@ pub fn main() !void {
     var lat: []const u8 = "52.52";
     var lon: []const u8 = "13.41";
     var location_name: []const u8 = "Berlin";
+    var use_fahrenheit = false;
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --lat <lat> <lon>  Specify latitude and longitude\n  --help, -h         Show this help message\n\nExample:\n  z-weather-cli --lat 40.71 -74.00\n", .{});
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --lat <lat> <lon>  Specify latitude and longitude\n  --unit <C|F>       Temperature unit (C for Celsius, F for Fahrenheit)\n  --help, -h         Show this help message\n\nExample:\n  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
 
@@ -103,7 +104,12 @@ pub fn main() !void {
                 lon = args[i + 2];
                 location_name = "specified coordinates";
                 i += 2;
-            } else if (i == 1 && args.len >= 3) {
+            } else if (std.mem.eql(u8, args[i], "--unit") && i + 1 < args.len) {
+                if (std.mem.eql(u8, args[i + 1], "F")) {
+                    use_fahrenheit = true;
+                }
+                i += 1;
+            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--unit")) {
                 lat = args[1];
                 lon = args[2];
                 location_name = "specified coordinates";
@@ -146,14 +152,14 @@ pub fn main() !void {
     const body = response_body.items;
     
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
-        const temp = extractValue(body, "temperature");
+        const temp_str = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
         
         const time = std.time.timestamp();
         var time_buf: [64]u8 = undefined;
-        const time_str = try std.fmt.bufPrint(&time_buf, "{d}", .{time});
+        const time_str_fmt = try std.fmt.bufPrint(&time_buf, "{d}", .{time});
 
         try stdout.print("\n┌──────────────────────────────────────┐\n", .{});
         try stdout.print("│          WEATHER REPORT               │\n", .{});
@@ -161,15 +167,25 @@ pub fn main() !void {
         try stdout.print("│ Location    : {s:<24} │\n", .{location_name});
         try stdout.print("│ Condition   : {s:<24} │\n", .{condition});
         
-        var temp_buf: [32]u8 = undefined;
-        const temp_formatted = try std.fmt.bufPrint(&temp_buf, "{s} °C", .{temp});
-        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_formatted});
+        var temp_display: [32]u8 = undefined;
+        if (use_fahrenheit) {
+            if (std.fmt.parseFloat(f32, temp_str)) |celsius| {
+                const fahrenheit = (celsius * 9 / 5) + 32;
+                _ = try std.fmt.bufPrint(&temp_display, "{d:.1} °F", .{fahrenheit});
+            } else {
+                _ = try std.fmt.bufPrint(&temp_display, "{s} °F (err)", .{temp_str});
+            }
+        } else {
+            _ = try std.fmt.bufPrint(&temp_display, "{s} °C", .{temp_str});
+        }
+        
+        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_display});
         
         var wind_buf: [32]u8 = undefined;
         const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
         try stdout.print("│ Windspeed   : {s:<24} │\n", .{wind_formatted});
         
-        try stdout.print("│ Updated     : {s:<24} │\n", .{time_str});
+        try stdout.print("│ Updated     : {s:<24} │\n", .{time_str_fmt});
         try stdout.print("└──────────────────────────────────────┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
