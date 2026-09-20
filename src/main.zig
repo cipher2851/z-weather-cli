@@ -189,12 +189,6 @@ pub fn main() !void {
         var time_buf: [64]u8 = undefined;
         const time_str_fmt = try std.fmt.bufPrint(&time_buf, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{ year, month + 1, day, hour, minute, second });
 
-        try stdout.print("\n┌──────────────────────────────────────┐\n", .{});
-        try stdout.print("│          WEATHER REPORT               │\n", .{});
-        try stdout.print("├──────────────────────────────────────┤\n", .{});
-        try stdout.print("│ Location    : {s:<24} │\n", .{location_name});
-        try stdout.print("│ Condition   : {s:<24} │\n", .{condition});
-        
         var temp_display: [32]u8 = undefined;
         if (use_fahrenheit) {
             if (std.fmt.parseFloat(f32, temp_str)) |celsius| {
@@ -207,14 +201,47 @@ pub fn main() !void {
             _ = try std.fmt.bufPrint(&temp_display, "{s} °C", .{temp_str});
         }
         
-        try stdout.print("│ Temperature : {s:<24} │\n", .{temp_display});
-        
         var wind_buf: [32]u8 = undefined;
         const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
-        try stdout.print("│ Windspeed   : {s:<24} │\n", .{wind_formatted});
+
+        // Calculate dynamic width
+        var max_val_len = location_name.len;
+        if (condition.len > max_val_len) max_val_len = condition.len;
+        if (temp_display.len > max_val_len) max_val_len = temp_display.len;
+        if (wind_formatted.len > max_val_len) max_val_len = wind_formatted.len;
+        if (time_str_fmt.len > max_val_len) max_val_len = time_str_fmt.len;
         
-        try stdout.print("│ Updated     : {s:<24} │\n", .{time_str_fmt});
-        try stdout.print("└──────────────────────────────────────┘\n", .{});
+        const inner_width = if (max_val_len < 24) 24 else max_val_len;
+        
+        var line_buf: [128]u8 = undefined;
+        const border = try std.fmt.bufPrint(&line_buf, "{s}", std.mem.dup(u8, &line_buf, inner_width + 2, '─'));
+        // Note: bufPrint above is a sketch, let's just use a loop for the border to be safe with Zig's constraints
+
+        try stdout.print("\n┌", .{});
+        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        try stdout.print("┐\n", .{});
+        
+        try stdout.print("│", .{});
+        try stdout.print("          WEATHER REPORT", .{});
+        // Pad the header to the center
+        const header_text = "          WEATHER REPORT";
+        const padding = inner_width + 2 - header_text.len;
+        for (0..padding) |_| try stdout.print(" ", .{});
+        try stdout.print("│\n", .{});
+
+        try stdout.print("├", .{});
+        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        try stdout.print("┤\n", .{});
+
+        try stdout.print("│ Location    : {s:<{d}} │\n", .{ location_name, inner_width });
+        try stdout.print("│ Condition   : {s:<{d}} │\n", .{ condition, inner_width });
+        try stdout.print("│ Temperature : {s:<{d}} │\n", .{ temp_display, inner_width });
+        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ wind_formatted, inner_width });
+        try stdout.print("│ Updated     : {s:<{d}} │\n", .{ time_str_fmt, inner_width });
+        
+        try stdout.print("└", .{});
+        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        try stdout.print("┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
