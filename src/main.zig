@@ -101,6 +101,26 @@ pub fn main() !void {
         }
     }
 
+    // Basic coordinate validation
+    if (std.fmt.parseFloat(f32, lat)) |lat_val| {
+        if (lat_val < -90 or lat_val > 90) {
+            try stdout.print("Error: Latitude must be between -90 and 90.\n", .{});
+            return;
+        }
+    } else {
+        try stdout.print("Error: Invalid latitude format.\n", .{});
+        return;
+    }
+    if (std.fmt.parseFloat(f32, lon)) |lon_val| {
+        if (lon_val < -180 or lon_val > 180) {
+            try stdout.print("Error: Longitude must be between -180 and 180.\n", .{});
+            return;
+        }
+    } else {
+        try stdout.print("Error: Invalid longitude format.\n", .{});
+        return;
+    }
+
     const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
     defer allocator.free(url);
 
@@ -111,11 +131,20 @@ pub fn main() !void {
 
     var server_header_buffer: [1024]u8 = undefined;
     
-    var request = try client.open(.GET, url, .{ .response_headers_buffer = &server_header_buffer });
+    const request = client.open(.GET, url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
+        try stdout.print("Network Error: Could not open connection. {any}\n", .{err});
+        return;
+    };
     defer request.deinit();
 
-    try request.send();
-    try request.wait();
+    request.send() catch |err| {
+        try stdout.print("Network Error: Failed to send request. {any}\n", .{err});
+        return;
+    };
+    request.wait() catch |err| {
+        try stdout.print("Network Error: Failed to wait for response. {any}\n", .{err});
+        return;
+    };
 
     if (request.response.status != .ok) {
         try stdout.print("API Error: Received status code {d}\n", .{ @intFromEnum(request.response.status) });
