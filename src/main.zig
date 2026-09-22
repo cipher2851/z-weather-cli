@@ -121,45 +121,82 @@ pub fn main() !void {
         return;
     }
 
-    const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
-    defer allocator.free(url);
-
-    try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
-
-    var client = std.http.Client{ .allocator = allocator };
-    defer client.deinit();
-
-    var server_header_buffer: [1024]u8 = undefined;
+    // Cache logic
+    var cache_path_buf: [128]u8 = undefined;
+    const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ lat, lon });
     
-    const request = client.open(.GET, url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
-        try stdout.print("Network Error: Could not open connection. {any}\n", .{err});
-        return;
-    };
-    defer request.deinit();
+    var body: []const u8 = "";
+    var from_cache = false;
 
-    request.send() catch |err| {
-        try stdout.print("Network Error: Failed to send request. {any}\n", .{err});
-        return;
-    };
-    request.wait() catch |err| {
-        try stdout.print("Network Error: Failed to wait for response. {any}\n", .{err});
-        return;
-    };
-
-    if (request.response.status != .ok) {
-        try stdout.print("API Error: Received status code {d}\n", .{ @intFromEnum(request.response.status) });
-        return;
+    const cached_file = std.fs.cwd().openFile(cache_path, .{}, null) catch null;
+    if (cached_file) |file| {
+        defer file.close();
+        const stat = file.stat() catch null;
+        if (stat) |s| {
+            const mtime = s.mtime orelse 0;
+            const now = std.time.timestamp();
+            if (now - mtime < 1800) { // 30 minutes cache
+                const size = @intCast(s.size);
+                const buf = try allocator.alloc(u8, size);
+                _ = try file.readAll(buf);
+                body = buf;
+                from_cache = true;
+            }
+        }
     }
 
-    var response_body = std.ArrayList(u8).init(allocator);
-    defer response_body.deinit();
+    if (!from_cache) {
+        const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
+        defer allocator.free(url);
 
-    while (try request.read()) |chunk| {
-        try response_body.appendSlice(chunk);
+        try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+
+        var client = std.http.Client{ .allocator = allocator };
+        defer client.deinit();
+
+        var server_header_buffer: [1024]u8 = undefined;
+        
+        const request = client.open(.GET, url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
+            try stdout.print("Network Error: Could not open connection. {any}\n", .{err});
+            return;
+        };
+        defer request.deinit();
+
+        request.send() catch |err| {
+            try stdout.print("Network Error: Failed to send request. {any}\n", .{err});
+            return;
+        };
+        request.wait() catch |err| {
+            try stdout.print("Network Error: Failed to wait for response. {any}\n", .{err});
+            return;
+        };
+
+        if (request.response.status != .ok) {
+            try stdout.print("API Error: Received status code {d}\n", .{ @intFromEnum(request.response.status) });
+            return;
+        }
+
+        var response_body = std.ArrayList(u8).init(allocator);
+        defer response_body.deinit();
+
+        while (try request.read()) |chunk| {
+            try response_body.appendSlice(chunk);
+        }
+
+        body = try allocator.dupe(u8, response_body.items);
+        
+        // Save to cache
+        const cache_file = std.fs.cwd().createFile(cache_path, .{}) catch null;
+        if (cache_file) |f| {
+            defer f.close();
+            _ = f.writeAll(body) catch {};
+        }
+    } else {
+        try stdout.print("Using cached data for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
     }
 
-    const body = response_body.items;
-    
+    defer allocator.free(body);
+
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
         const temp_str = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
