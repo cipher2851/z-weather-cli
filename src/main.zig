@@ -146,7 +146,7 @@ pub fn main() !void {
     }
 
     if (!from_cache) {
-        const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true", .{ lat, lon });
+        const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{ lat, lon });
         defer allocator.free(url);
 
         try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
@@ -203,6 +203,9 @@ pub fn main() !void {
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
         
+        const humidity = extractValue(body, "relative_humidity_2m");
+        const apparent_temp_str = extractValue(body, "apparent_temperature");
+
         const timestamp = std.time.timestamp();
         const date = std.time.epoch_days(timestamp);
         const seconds_in_day = @as(i64, @intCast(timestamp % 86400));
@@ -246,9 +249,24 @@ pub fn main() !void {
         } else {
             _ = try std.fmt.bufPrint(&temp_display, "{s} °C", .{temp_str});
         }
+
+        var apparent_display: [32]u8 = undefined;
+        if (use_fahrenheit) {
+            if (std.fmt.parseFloat(f32, apparent_temp_str)) |celsius| {
+                const fahrenheit = (celsius * 9 / 5) + 32;
+                _ = try std.fmt.bufPrint(&apparent_display, "{d:.1} °F", .{fahrenheit});
+            } else {
+                _ = try std.fmt.bufPrint(&apparent_display, "{s} °F (err)", .{apparent_temp_str});
+            }
+        } else {
+            _ = try std.fmt.bufPrint(&apparent_display, "{s} °C", .{apparent_temp_str});
+        }
         
         var wind_buf: [32]u8 = undefined;
         const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
+
+        var humid_buf: [32]u8 = undefined;
+        const humid_formatted = try std.fmt.bufPrint(&humid_buf, "{s}%", .{humidity});
 
         // Calculate dynamic width
         var max_val_len = location_name.len;
@@ -256,6 +274,8 @@ pub fn main() !void {
         if (temp_display.len > max_val_len) max_val_len = temp_display.len;
         if (wind_formatted.len > max_val_len) max_val_len = wind_formatted.len;
         if (time_str_fmt.len > max_val_len) max_val_len = time_str_fmt.len;
+        if (humid_formatted.len > max_val_len) max_val_len = humid_formatted.len;
+        if (apparent_display.len > max_val_len) max_val_len = apparent_display.len;
         
         const inner_width = if (max_val_len < 24) 24 else max_val_len;
         
@@ -279,6 +299,8 @@ pub fn main() !void {
         try stdout.print("│ Location    : {s:<{d}} │\n", .{ location_name, inner_width });
         try stdout.print("│ Condition   : {s:<{d}} │\n", .{ condition, inner_width });
         try stdout.print("│ Temperature : {s:<{d}} │\n", .{ temp_display, inner_width });
+        try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ apparent_display, inner_width });
+        try stdout.print("│ Humidity    : {s:<{d}} │\n", .{ humid_formatted, inner_width });
         try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ wind_formatted, inner_width });
         try stdout.print("│ Updated     : {s:<{d}} │\n", .{ time_str_fmt, inner_width });
         
