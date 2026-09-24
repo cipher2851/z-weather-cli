@@ -22,6 +22,16 @@ fn getWeatherCondition(code: []const u8) []const u8 {
     return "Unknown";
 }
 
+/// Maps degrees to compass direction
+fn getWindDirection(degrees_str: []const u8) []const u8 {
+    if (std.fmt.parseFloat(f32, degrees_str)) |deg| {
+        const dirs = [_][]const u8{ "N", "NE", "E", "SE", "S", "SW", "W", "NW", "N" };
+        const idx = @as(usize, @intCast((deg + 22.5) / 45.0));
+        if (idx < dirs.len) return dirs[idx];
+    }
+    return "Unknown";
+}
+
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
     var search_key_buf: [64]u8 = undefined;
@@ -200,6 +210,7 @@ pub fn main() !void {
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
         const temp_str = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
+        const wind_dir_str = extractValue(body, "winddirection");
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
         
@@ -263,7 +274,8 @@ pub fn main() !void {
         }
         
         var wind_buf: [32]u8 = undefined;
-        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h", .{wind});
+        const wind_dir = getWindDirection(wind_dir_str);
+        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h ({s})", .{wind, wind_dir});
 
         var humid_buf: [32]u8 = undefined;
         const humid_formatted = try std.fmt.bufPrint(&humid_buf, "{s}%", .{humidity});
