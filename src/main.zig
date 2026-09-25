@@ -172,6 +172,9 @@ pub fn main() !void {
         };
         defer request.deinit();
 
+        // Set a User-Agent as requested by Open-Meteo
+        request.headers.append("User-Agent", "z-weather-cli/1.0 (Zig CLI utility)") catch {};
+
         request.send() catch |err| {
             try stdout.print("Network Error: Failed to send request. {any}\n", .{err});
             return;
@@ -309,6 +312,11 @@ pub fn main() !void {
         try stdout.print("┤\n", .{});
 
         try stdout.print("│ Location    : {s:<{d}} │\n", .{ location_name, inner_width });
+        
+        try stdout.print("├", .{});
+        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        try stdout.print("┤\n", .{});
+
         try stdout.print("│ Condition   : {s:<{d}} │\n", .{ condition, inner_width });
         try stdout.print("│ Temperature : {s:<{d}} │\n", .{ temp_display, inner_width });
         try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ apparent_display, inner_width });
