@@ -80,17 +80,27 @@ pub fn main() !void {
     var lon: []const u8 = "13.41";
     var location_name: []const u8 = "Berlin";
     var use_fahrenheit = false;
+    var city_name: ?[]const u8 = null;
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --lat <lat> <lon>  Specify latitude and longitude\n  --unit <C|F>       Temperature unit (C for Celsius, F for Fahrenheit)\n  --help, -h         Show this help message\n\nExample:\n  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
+  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
 
         var i: usize = 1;
         while (i < args.len) : (i += 1) {
             const arg = args[i];
-            if (std.mem.eql(u8, arg, "--lat")) {
+            if (std.mem.eql(u8, arg, "--city")) {
+                if (i + 1 < args.len) {
+                    city_name = args[i + 1];
+                    i += 1;
+                } else {
+                    try stdout.print("Error: --city requires a city name.\n", .{});
+                    return;
+                }
+            } else if (std.mem.eql(u8, arg, "--lat")) {
                 if (i + 2 < args.len) {
                     lat = args[i + 1];
                     lon = args[i + 2];
@@ -110,7 +120,7 @@ pub fn main() !void {
                     try stdout.print("Error: --unit requires a value (C or F).\n", .{});
                     return;
                 }
-            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit")) {
+            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 // Positional arguments for lat/lon
                 lat = args[1];
                 lon = args[2];
@@ -121,6 +131,56 @@ pub fn main() !void {
                 return;
             }
         }
+    }
+
+    if (city_name) |city| {
+        const geo_url = try std.fmt.allocPrint(allocator, "https://geocoding-api.open-meteo.com/v1/search?name={s}&count=1&language=en&format=json", .{city});
+        defer allocator.free(geo_url);
+
+        var client = std.http.Client{ .allocator = allocator };
+        defer client.deinit();
+
+        var server_header_buffer: [1024]u8 = undefined;
+        const request = client.open(.GET, geo_url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
+            try stdout.print("Network Error: Geocoding failed. {any}\n", .{err});
+            return;
+        };
+        defer request.deinit();
+
+        request.headers.append("User-Agent", "z-weather-cli/1.0 (Zig CLI utility)") catch {};
+        request.send() catch |err| {
+            try stdout.print("Network Error: Failed to send geocoding request. {any}\n", .{err});
+            return;
+        };
+        request.wait() catch |err| {
+            try stdout.print("Network Error: Failed to wait for geocoding response. {any}\n", .{err});
+            return;
+        };
+
+        var geo_body = std.ArrayList(u8).init(allocator);
+        defer geo_body.deinit();
+        while (try request.read()) |chunk| {
+            try geo_body.appendSlice(chunk);
+        }
+
+        const res_body = geo_body.items;
+        if (std.mem.indexOf(u8, res_body, "\"results\":") == null) {
+            try stdout.print("Error: City '{s}' not found.\n", .{city});
+            return;
+        }
+
+        const found_lat = extractValue(res_body, "latitude");
+        const found_lon = extractValue(res_body, "longitude");
+        const found_name = extractValue(res_body, "name");
+
+        if (found_lat.len == 0 or found_lon.len == 0) {
+            try stdout.print("Error: Could not extract coordinates for {s}.\n", .{city});
+            return;
+        }
+
+        lat = try allocator.dupe(u8, found_lat);
+        lon = try allocator.dupe(u8, found_lon);
+        location_name = try allocator.dupe(u8, found_name);
     }
 
     // Basic coordinate validation
