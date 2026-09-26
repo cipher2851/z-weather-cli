@@ -260,7 +260,7 @@ pub fn main() !void {
         };
 
         if (request.response.status != .ok) {
-            try stdout.print("API Error: Received status code {d}\n", .{ @intFromEnum(request.response.status) });
+            try stdout.print("API Error: Received status code {d}. Please verify coordinates or API availability.\n", .{ @intFromEnum(request.response.status) });
             return;
         }
 
@@ -419,7 +419,7 @@ pub fn main() !void {
         for (0..inner_width + 2) |_| try stdout.print("─", .{});
         try stdout.print("┘\n", .{});
     } else {
-        try stdout.print("Failed to find weather data in response.\n", .{});
+        try stdout.print("Failed to find weather data in response. The API may have returned an unexpected format.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
     }
 }
