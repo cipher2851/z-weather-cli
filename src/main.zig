@@ -311,12 +311,14 @@ pub fn main() !void {
         try stdout.print("┐\n", .{});
         
         try stdout.print("│", .{});
-        const header_text = "          WEATHER REPORT";
+        const header_text = "WEATHER REPORT";
+        const total_width = inner_width + 2;
+        const left_padding = (total_width - header_text.len) / 2;
+        const right_padding = total_width - header_text.len - left_padding;
+        
+        for (0..left_padding) |_| try stdout.print(" ", .{});
         try stdout.print("{s}", .{header_text});
-        const padding = (inner_width + 2) - header_text.len;
-        if (padding > 0) {
-            for (0..padding) |_| try stdout.print(" ", .{});
-        }
+        for (0..right_padding) |_| try stdout.print(" ", .{});
         try stdout.print("│\n", .{});
 
         try stdout.print("├", .{});
