@@ -89,23 +89,35 @@ pub fn main() !void {
 
         var i: usize = 1;
         while (i < args.len) : (i += 1) {
-            if (std.mem.eql(u8, args[i], "--lat") && i + 2 < args.len) {
-                lat = args[i + 1];
-                lon = args[i + 2];
-                location_name = "specified coordinates";
-                i += 2;
-            } else if (std.mem.eql(u8, args[i], "--unit") && i + 1 < args.len) {
-                if (std.mem.eql(u8, args[i + 1], "F")) {
-                    use_fahrenheit = true;
+            const arg = args[i];
+            if (std.mem.eql(u8, arg, "--lat")) {
+                if (i + 2 < args.len) {
+                    lat = args[i + 1];
+                    lon = args[i + 2];
+                    location_name = "specified coordinates";
+                    i += 2;
+                } else {
+                    try stdout.print("Error: --lat requires both latitude and longitude.\n", .{});
+                    return;
                 }
-                i += 1;
-            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, args[1], "--unit")) {
+            } else if (std.mem.eql(u8, arg, "--unit")) {
+                if (i + 1 < args.len) {
+                    if (std.mem.eql(u8, args[i + 1], "F")) {
+                        use_fahrenheit = true;
+                    }
+                    i += 1;
+                } else {
+                    try stdout.print("Error: --unit requires a value (C or F).\n", .{});
+                    return;
+                }
+            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit")) {
+                // Positional arguments for lat/lon
                 lat = args[1];
                 lon = args[2];
                 location_name = "specified coordinates";
                 i += 2;
             } else {
-                try stdout.print("Unknown argument: {s}. Use --help for usage.\n", .{args[i]});
+                try stdout.print("Unknown argument: {s}. Use --help for usage.\n", .{arg});
                 return;
             }
         }
@@ -118,7 +130,7 @@ pub fn main() !void {
             return;
         }
     } else {
-        try stdout.print("Error: Invalid latitude format.\n", .{});
+        try stdout.print("Error: Invalid latitude format: {s}\n", .{lat});
         return;
     }
     if (std.fmt.parseFloat(f32, lon)) |lon_val| {
@@ -127,7 +139,7 @@ pub fn main() !void {
             return;
         }
     } else {
-        try stdout.print("Error: Invalid longitude format.\n", .{});
+        try stdout.print("Error: Invalid longitude format: {s}\n", .{lon});
         return;
     }
 
