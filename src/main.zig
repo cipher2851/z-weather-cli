@@ -81,10 +81,11 @@ pub fn main() !void {
     var location_name: []const u8 = "Berlin";
     var use_fahrenheit = false;
     var city_name: ?[]const u8 = null;
+    var json_output = false;
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
   z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
@@ -120,6 +121,8 @@ pub fn main() !void {
                     try stdout.print("Error: --unit requires a value (C or F).\n", .{});
                     return;
                 }
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                json_output = true;
             } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 // Positional arguments for lat/lon
                 lat = args[1];
@@ -231,7 +234,7 @@ pub fn main() !void {
         const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{ lat, lon });
         defer allocator.free(url);
 
-        try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+        if (!json_output) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
 
         var client = std.http.Client{ .allocator = allocator };
         defer client.deinit();
@@ -276,7 +279,7 @@ pub fn main() !void {
             defer f.close();
             _ = f.writeAll(body) catch {};
         }
-    } else {
+    } else if (!json_output) {
         try stdout.print("Using cached data for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
     }
 
@@ -354,6 +357,20 @@ pub fn main() !void {
 
         var humid_buf: [32]u8 = undefined;
         const humid_formatted = try std.fmt.bufPrint(&humid_buf, "{s}%", .{humidity});
+
+        if (json_output) {
+            try stdout.print("{{" + 
+                "\"location\": \"{s}\", "
+                "\"condition\": \"{s}\", "
+                "\"temperature\": \"{s}\", "
+                "\"feels_like\": \"{s}\", "
+                "\"humidity\": \"{s}\", "
+                "\"windspeed\": \"{s}\", "
+                "\"updated\": \"{s}\""
+                }}", .{ location_name, condition, temp_display, apparent_display, humid_formatted, wind_formatted, time_str_fmt });
+            try stdout.print("\n", .{});
+            return;
+        }
 
         // Calculate dynamic width
         var max_val_len = location_name.len;
