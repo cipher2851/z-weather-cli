@@ -82,10 +82,11 @@ pub fn main() !void {
     var use_fahrenheit = false;
     var city_name: ?[]const u8 = null;
     var json_output = false;
+    var verbose = false;
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
   z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
@@ -123,6 +124,8 @@ pub fn main() !void {
                 }
             } else if (std.mem.eql(u8, arg, "--json")) {
                 json_output = true;
+            } else if (std.mem.eql(u8, arg, "--verbose")) {
+                verbose = true;
             } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 // Positional arguments for lat/lon
                 lat = args[1];
@@ -167,6 +170,10 @@ pub fn main() !void {
         }
 
         const res_body = geo_body.items;
+        if (verbose) {
+            try stdout.print("\n[Verbose] Geocoding Response:\n{s}\n", .{res_body});
+        }
+
         if (std.mem.indexOf(u8, res_body, "\"results\":") == null) {
             try stdout.print("Error: City '{s}' not found.\n", .{city});
             return;
@@ -277,6 +284,10 @@ pub fn main() !void {
 
         body = try allocator.dupe(u8, response_body.items);
         
+        if (verbose) {
+            try stdout.print("\n[Verbose] Weather API Response:\n{s}\n", .{body});
+        }
+
         // Save to cache
         const cache_file = std.fs.cwd().createFile(cache_path, .{}) catch null;
         if (cache_file) |f| {
