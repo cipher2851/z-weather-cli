@@ -241,7 +241,11 @@ pub fn main() !void {
 
         var server_header_buffer: [1024]u8 = undefined;
         
-        const request = client.open(.GET, url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
+        const request = client.open(.GET, url, .{ 
+            .response_headers_buffer = &server_header_buffer, 
+            // Set a 10 second timeout for the request
+            .timeout = 10 * std.time.ns_per_s, 
+        }) catch |err| {
             try stdout.print("Network Error: Could not open connection. {any}\n", .{err});
             return;
         };
