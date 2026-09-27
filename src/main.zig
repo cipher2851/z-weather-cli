@@ -289,6 +289,11 @@ pub fn main() !void {
 
     defer allocator.free(body);
 
+    if (body.len == 0) {
+        try stdout.print("Error: Received an empty response from the weather service.\n", .{});
+        return;
+    }
+
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
         const temp_str = extractValue(body, "temperature");
         const wind = extractValue(body, "windspeed");
@@ -386,14 +391,14 @@ pub fn main() !void {
         if (apparent_display.len > max_val_len) max_val_len = apparent_display.len;
         
         const inner_width = if (max_val_len < 24) 24 else max_val_len;
+        const total_width = inner_width + 2;
         
         try stdout.print("\n┌", .{});
-        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┐\n", .{});
         
         try stdout.print("│", .{});
         const header_text = "WEATHER REPORT";
-        const total_width = inner_width + 2;
         const left_padding = (total_width - header_text.len) / 2;
         const right_padding = total_width - header_text.len - left_padding;
         
@@ -403,13 +408,13 @@ pub fn main() !void {
         try stdout.print("│\n", .{});
 
         try stdout.print("├", .{});
-        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
         try stdout.print("│ Location    : {s:<{d}} │\n", .{ location_name, inner_width });
         
         try stdout.print("├", .{});
-        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
         try stdout.print("│ Condition   : {s:<{d}} │\n", .{ condition, inner_width });
@@ -420,7 +425,7 @@ pub fn main() !void {
         try stdout.print("│ Updated     : {s:<{d}} │\n", .{ time_str_fmt, inner_width });
         
         try stdout.print("└", .{});
-        for (0..inner_width + 2) |_| try stdout.print("─", .{});
+        for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┘\n", .{});
     } else {
         try stdout.print("Failed to find weather data in response. The API may have returned an unexpected format.\n", .{});
