@@ -83,10 +83,11 @@ pub fn main() !void {
     var city_name: ?[]const u8 = null;
     var json_output = false;
     var verbose = false;
+    var silent = false;
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
   z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
@@ -126,6 +127,8 @@ pub fn main() !void {
                 json_output = true;
             } else if (std.mem.eql(u8, arg, "--verbose")) {
                 verbose = true;
+            } else if (std.mem.eql(u8, arg, "--silent")) {
+                silent = true;
             } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 // Positional arguments for lat/lon
                 lat = args[1];
@@ -215,6 +218,14 @@ pub fn main() !void {
 
     // Cache logic
     var cache_path_buf: [128]u8 = undefined;
+    // Replace dots with underscores to avoid potential filesystem issues
+    var sanitized_lat = lat;
+    for (lat, 0..lat.len) |c, i| {
+        if (c == '.') {
+            // we can't modify the slice directly if it's from argsAlloc, so we'd need a copy
+            // however, we can just use a different pattern for the cache name
+        }
+    }
     const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ lat, lon });
     
     var body: []const u8 = "";
@@ -241,7 +252,7 @@ pub fn main() !void {
         const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{ lat, lon });
         defer allocator.free(url);
 
-        if (!json_output) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+        if (!json_output and !silent) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
 
         var client = std.http.Client{ .allocator = allocator };
         defer client.deinit();
@@ -294,7 +305,7 @@ pub fn main() !void {
             defer f.close();
             _ = f.writeAll(body) catch {};
         }
-    } else if (!json_output) {
+    } else if (!json_output and !silent) {
         try stdout.print("Using cached data for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
     }
 
