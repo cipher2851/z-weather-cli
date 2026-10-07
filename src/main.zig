@@ -218,15 +218,14 @@ pub fn main() !void {
 
     // Cache logic
     var cache_path_buf: [128]u8 = undefined;
-    // Replace dots with underscores to avoid potential filesystem issues
-    var sanitized_lat = lat;
-    for (lat, 0..lat.len) |c, i| {
-        if (c == '.') {
-            // we can't modify the slice directly if it's from argsAlloc, so we'd need a copy
-            // however, we can just use a different pattern for the cache name
-        }
-    }
-    const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ lat, lon });
+    
+    // Sanitize lat/lon for filename by replacing dots with underscores
+    const sanitized_lat = try std.mem.replace(u8, allocator, lat, ".", "_");
+    defer allocator.free(sanitized_lat);
+    const sanitized_lon = try std.mem.replace(u8, allocator, lon, ".", "_");
+    defer allocator.free(sanitized_lon);
+
+    const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ sanitized_lat, sanitized_lon });
     
     var body: []const u8 = "";
     var from_cache = false;
