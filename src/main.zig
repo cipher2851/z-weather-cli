@@ -87,7 +87,7 @@ pub fn main() !void {
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "New York"
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "Tokyo"
   z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
@@ -197,22 +197,20 @@ pub fn main() !void {
     }
 
     // Basic coordinate validation
-    if (std.fmt.parseFloat(f32, lat)) |lat_val| {
-        if (lat_val < -90 or lat_val > 90) {
-            try stdout.print("Error: Latitude must be between -90 and 90.\n", .{});
-            return;
-        }
-    } else {
+    const lat_val = std.fmt.parseFloat(f32, lat) catch {
         try stdout.print("Error: Invalid latitude format: {s}\n", .{lat});
         return;
+    };
+    if (lat_val < -90 or lat_val > 90) {
+        try stdout.print("Error: Latitude must be between -90 and 90.\n", .{});
+        return;
     }
-    if (std.fmt.parseFloat(f32, lon)) |lon_val| {
-        if (lon_val < -180 or lon_val > 180) {
-            try stdout.print("Error: Longitude must be between -180 and 180.\n", .{});
-            return;
-        }
-    } else {
+    const lon_val = std.fmt.parseFloat(f32, lon) catch {
         try stdout.print("Error: Invalid longitude format: {s}\n", .{lon});
+        return;
+    };
+    if (lon_val < -180 or lon_val > 180) {
+        try stdout.print("Error: Longitude must be between -180 and 180.\n", .{});
         return;
     }
 
