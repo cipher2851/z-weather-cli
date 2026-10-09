@@ -150,7 +150,10 @@ pub fn main() !void {
         defer client.deinit();
 
         var server_header_buffer: [1024]u8 = undefined;
-        const request = client.open(.GET, geo_url, .{ .response_headers_buffer = &server_header_buffer }) catch |err| {
+        const request = client.open(.GET, geo_url, .{ 
+            .response_headers_buffer = &server_header_buffer, 
+            .timeout = 10 * std.time.ns_per_s, 
+        }) catch |err| {
             try stdout.print("Network Error: Geocoding failed. {any}\n", .{err});
             return;
         };
