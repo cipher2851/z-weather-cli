@@ -32,6 +32,39 @@ fn getWindDirection(degrees_str: []const u8) []const u8 {
     return "Unknown";
 }
 
+/// Formats current timestamp into a UTC string
+fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
+    const date = std.time.epoch_days(timestamp);
+    const seconds_in_day = @as(i64, @intCast(timestamp % 86400));
+
+    var year = 1970;
+    var days_remaining = date;
+    while (true) {
+        const is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0));
+        const days_in_year: i64 = if (is_leap) 366 else 365;
+        if (days_remaining < days_in_year) break;
+        days_remaining -= days_in_year;
+        year += 1;
+    }
+
+    const month_days = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    var month: usize = 0;
+    var days_in_month_remaining = days_remaining;
+    while (month < 12) {
+        var dim = month_days[month];
+        if (month == 1 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))) dim += 1;
+        if (days_in_month_remaining < dim) break;
+        days_in_month_remaining -= dim;
+        month += 1;
+    }
+    const day = days_in_month_remaining + 1;
+    const hour = seconds_in_day / 3600;
+    const minute = (seconds_in_day % 3600) / 60;
+    const second = seconds_in_day % 60;
+
+    return try std.fmt.allocPrint(allocator, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{ year, month + 1, day, hour, minute, second });
+}
+
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
     var search_key_buf: [64]u8 = undefined;
@@ -326,37 +359,8 @@ pub fn main() !void {
         const humidity = extractValue(body, "relative_humidity_2m");
         const apparent_temp_str = extractValue(body, "apparent_temperature");
 
-        const timestamp = std.time.timestamp();
-        const date = std.time.epoch_days(timestamp);
-        const seconds_in_day = @as(i64, @intCast(timestamp % 86400));
-        
-        var year = 1970;
-        var days_remaining = date;
-        while (true) {
-            const is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0));
-            const days_in_year: i64 = if (is_leap) 366 else 365;
-            if (days_remaining < days_in_year) break;
-            days_remaining -= days_in_year;
-            year += 1;
-        }
-
-        const month_days = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-        var month: usize = 0;
-        var days_in_month_remaining = days_remaining;
-        while (month < 12) {
-            var dim = month_days[month];
-            if (month == 1 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))) dim += 1;
-            if (days_in_month_remaining < dim) break;
-            days_in_month_remaining -= dim;
-            month += 1;
-        }
-        const day = days_in_month_remaining + 1;
-        const hour = seconds_in_day / 3600;
-        const minute = (seconds_in_day % 3600) / 60;
-        const second = seconds_in_day % 60;
-
-        var time_buf: [64]u8 = undefined;
-        const time_str_fmt = try std.fmt.bufPrint(&time_buf, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{ year, month + 1, day, hour, minute, second });
+        const time_str_fmt = try formatUtcTime(allocator, std.time.timestamp());
+        defer allocator.free(time_str_fmt);
 
         var temp_display: [32]u8 = undefined;
         if (use_fahrenheit) {
