@@ -1,5 +1,22 @@
 const std = @import("std");
 
+/// WeatherData holds the processed weather information
+const WeatherData = struct {
+    location: []const u8,
+    condition: []const u8,
+    temp: []const u8,
+    feels_like: []const u8,
+    humidity: []const u8,
+    wind: []const u8,
+    updated: []const u8,
+
+    pub fn deinit(self: WeatherData, allocator: std.mem.Allocator) void {
+        // Only free fields that were duplicated/allocated
+        // In this implementation, most are slices of the body or fixed buffers
+        // But we'll handle potential allocations if they occur
+    }
+};
+
 /// Maps WMO Weather interpretation codes to human-readable strings
 fn getWeatherCondition(code: []const u8) []const u8 {
     if (std.mem.eql(u8, code, "0")) return "Clear sky";
@@ -354,8 +371,6 @@ pub fn main() !void {
         const wind_str = extractValue(body, "windspeed");
         const wind_dir_str = extractValue(body, "winddirection");
         const code = extractValue(body, "weathercode");
-        const condition = getWeatherCondition(code);
-        
         const humidity = extractValue(body, "relative_humidity_2m");
         const apparent_temp_str = extractValue(body, "apparent_temperature");
 
@@ -386,26 +401,9 @@ pub fn main() !void {
             _ = try std.fmt.bufPrint(&apparent_display, "{s} °C", .{apparent_temp_str});
         }
         
-        var wind_buf: [32]u8 = undefined;
-        const wind_dir = getWindDirection(wind_dir_str);
-        
-        if (use_fahrenheit) {
-            if (std.fmt.parseFloat(f32, wind_str)) |kmh| {
-                const mph = kmh * 0.621371;
-                _ = try std.fmt.bufPrint(&wind_buf, "{d:.1} mph ({s})", .{mph, wind_dir});
-            } else {
-                _ = try std.fmt.bufPrint(&wind_buf, "{s} mph ({s})", .{wind_str, wind_dir});
-            }
-        } else {
-            _ = try std.fmt.bufPrint(&wind_buf, "{s} km/h ({s})", .{wind_str, wind_dir});
-        }
-        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s}", .{wind_buf[0..wind_buf.len]}); // This is wrong, using just the buf
-        // Actually, let's just use wind_buf directly if we can, but we need a slice.
-        // Let's fix this by just getting the length of the print result.
-        
-        // Re-do wind_formatted properly
         var wind_final_buf: [64]u8 = undefined;
         var wind_final_slice: []const u8 = "";
+        const wind_dir = getWindDirection(wind_dir_str);
         if (use_fahrenheit) {
             if (std.fmt.parseFloat(f32, wind_str)) |kmh| {
                 const mph = kmh * 0.621371;
@@ -420,6 +418,16 @@ pub fn main() !void {
         var humid_buf: [32]u8 = undefined;
         const humid_formatted = try std.fmt.bufPrint(&humid_buf, "{s}%", .{humidity});
 
+        const weather = WeatherData{
+            .location = location_name,
+            .condition = getWeatherCondition(code),
+            .temp = &temp_display,
+            .feels_like = &apparent_display,
+            .humidity = humid_formatted,
+            .wind = wind_final_slice,
+            .updated = time_str_fmt,
+        };
+
         if (json_output) {
             try stdout.print("{{" + 
                 "\"location\": \"{s}\", "
@@ -429,19 +437,19 @@ pub fn main() !void {
                 "\"humidity\": \"{s}\", "
                 "\"windspeed\": \"{s}\", "
                 "\"updated\": \"{s}\""
-                }}", .{ location_name, condition, temp_display, apparent_display, humid_formatted, wind_final_slice, time_str_fmt });
+                }}", .{ weather.location, weather.condition, weather.temp, weather.feels_like, weather.humidity, weather.wind, weather.updated });
             try stdout.print("\n", .{});
             return;
         }
 
         // Calculate dynamic width
-        var max_val_len = location_name.len;
-        if (condition.len > max_val_len) max_val_len = condition.len;
-        if (temp_display.len > max_val_len) max_val_len = temp_display.len;
-        if (wind_final_slice.len > max_val_len) max_val_len = wind_final_slice.len;
-        if (time_str_fmt.len > max_val_len) max_val_len = time_str_fmt.len;
-        if (humid_formatted.len > max_val_len) max_val_len = humid_formatted.len;
-        if (apparent_display.len > max_val_len) max_val_len = apparent_display.len;
+        var max_val_len = weather.location.len;
+        if (weather.condition.len > max_val_len) max_val_len = weather.condition.len;
+        if (weather.temp.len > max_val_len) max_val_len = weather.temp.len;
+        if (weather.wind.len > max_val_len) max_val_len = weather.wind.len;
+        if (weather.updated.len > max_val_len) max_val_len = weather.updated.len;
+        if (weather.humidity.len > max_val_len) max_val_len = weather.humidity.len;
+        if (weather.feels_like.len > max_val_len) max_val_len = weather.feels_like.len;
         
         const inner_width = if (max_val_len < 24) 24 else max_val_len;
         const total_width = inner_width + 2;
@@ -464,18 +472,18 @@ pub fn main() !void {
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
-        try stdout.print("│ Location    : {s:<{d}} │\n", .{ location_name, inner_width });
+        try stdout.print("│ Location    : {s:<{d}} │\n", .{ weather.location, inner_width });
         
         try stdout.print("├", .{});
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
-        try stdout.print("│ Condition   : {s:<{d}} │\n", .{ condition, inner_width });
-        try stdout.print("│ Temperature : {s:<{d}} │\n", .{ temp_display, inner_width });
-        try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ apparent_display, inner_width });
-        try stdout.print("│ Humidity    : {s:<{d}} │\n", .{ humid_formatted, inner_width });
-        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ wind_final_slice, inner_width });
-        try stdout.print("│ Updated     : {s:<{d}} │\n", .{ time_str_fmt, inner_width });
+        try stdout.print("│ Condition   : {s:<{d}} │\n", .{ weather.condition, inner_width });
+        try stdout.print("│ Temperature : {s:<{d}} │\n", .{ weather.temp, inner_width });
+        try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ weather.feels_like, inner_width });
+        try stdout.print("│ Humidity    : {s:<{d}} │\n", .{ weather.humidity, inner_width });
+        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ weather.wind, inner_width });
+        try stdout.print("│ Updated     : {s:<{d}} │\n", .{ weather.updated, inner_width });
         
         try stdout.print("└", .{});
         for (0..total_width) |_| try stdout.print("─", .{});
