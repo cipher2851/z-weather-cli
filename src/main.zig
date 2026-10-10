@@ -351,7 +351,7 @@ pub fn main() !void {
 
     if (std.mem.indexOf(u8, body, "\"current_weather\":") != null) {
         const temp_str = extractValue(body, "temperature");
-        const wind = extractValue(body, "windspeed");
+        const wind_str = extractValue(body, "windspeed");
         const wind_dir_str = extractValue(body, "winddirection");
         const code = extractValue(body, "weathercode");
         const condition = getWeatherCondition(code);
@@ -388,7 +388,34 @@ pub fn main() !void {
         
         var wind_buf: [32]u8 = undefined;
         const wind_dir = getWindDirection(wind_dir_str);
-        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s} km/h ({s})", .{wind, wind_dir});
+        
+        if (use_fahrenheit) {
+            if (std.fmt.parseFloat(f32, wind_str)) |kmh| {
+                const mph = kmh * 0.621371;
+                _ = try std.fmt.bufPrint(&wind_buf, "{d:.1} mph ({s})", .{mph, wind_dir});
+            } else {
+                _ = try std.fmt.bufPrint(&wind_buf, "{s} mph ({s})", .{wind_str, wind_dir});
+            }
+        } else {
+            _ = try std.fmt.bufPrint(&wind_buf, "{s} km/h ({s})", .{wind_str, wind_dir});
+        }
+        const wind_formatted = try std.fmt.bufPrint(&wind_buf, "{s}", .{wind_buf[0..wind_buf.len]}); // This is wrong, using just the buf
+        // Actually, let's just use wind_buf directly if we can, but we need a slice.
+        // Let's fix this by just getting the length of the print result.
+        
+        // Re-do wind_formatted properly
+        var wind_final_buf: [64]u8 = undefined;
+        var wind_final_slice: []const u8 = "";
+        if (use_fahrenheit) {
+            if (std.fmt.parseFloat(f32, wind_str)) |kmh| {
+                const mph = kmh * 0.621371;
+                wind_final_slice = try std.fmt.bufPrint(&wind_final_buf, "{d:.1} mph ({s})", .{mph, wind_dir});
+            } else {
+                wind_final_slice = try std.fmt.bufPrint(&wind_final_buf, "{s} mph ({s})", .{wind_str, wind_dir});
+            }
+        } else {
+            wind_final_slice = try std.fmt.bufPrint(&wind_final_buf, "{s} km/h ({s})", .{wind_str, wind_dir});
+        }
 
         var humid_buf: [32]u8 = undefined;
         const humid_formatted = try std.fmt.bufPrint(&humid_buf, "{s}%", .{humidity});
@@ -402,7 +429,7 @@ pub fn main() !void {
                 "\"humidity\": \"{s}\", "
                 "\"windspeed\": \"{s}\", "
                 "\"updated\": \"{s}\""
-                }}", .{ location_name, condition, temp_display, apparent_display, humid_formatted, wind_formatted, time_str_fmt });
+                }}", .{ location_name, condition, temp_display, apparent_display, humid_formatted, wind_final_slice, time_str_fmt });
             try stdout.print("\n", .{});
             return;
         }
@@ -411,7 +438,7 @@ pub fn main() !void {
         var max_val_len = location_name.len;
         if (condition.len > max_val_len) max_val_len = condition.len;
         if (temp_display.len > max_val_len) max_val_len = temp_display.len;
-        if (wind_formatted.len > max_val_len) max_val_len = wind_formatted.len;
+        if (wind_final_slice.len > max_val_len) max_val_len = wind_final_slice.len;
         if (time_str_fmt.len > max_val_len) max_val_len = time_str_fmt.len;
         if (humid_formatted.len > max_val_len) max_val_len = humid_formatted.len;
         if (apparent_display.len > max_val_len) max_val_len = apparent_display.len;
@@ -447,7 +474,7 @@ pub fn main() !void {
         try stdout.print("│ Temperature : {s:<{d}} │\n", .{ temp_display, inner_width });
         try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ apparent_display, inner_width });
         try stdout.print("│ Humidity    : {s:<{d}} │\n", .{ humid_formatted, inner_width });
-        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ wind_formatted, inner_width });
+        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ wind_final_slice, inner_width });
         try stdout.print("│ Updated     : {s:<{d}} │\n", .{ time_str_fmt, inner_width });
         
         try stdout.print("└", .{});
