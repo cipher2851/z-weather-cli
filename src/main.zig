@@ -116,6 +116,20 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
     return result;
 }
 
+/// Helper to sanitize strings for use in filenames
+fn sanitizeFilename(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    errdefer result.deinit();
+    for (input) |c| {
+        if (std.ascii.isAlphanumeric(c)) {
+            try result.append(c);
+        } else {
+            try result.append('_');
+        }
+    }
+    return result.toOwnedSlice();
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -270,10 +284,9 @@ pub fn main() !void {
     // Cache logic
     var cache_path_buf: [128]u8 = undefined;
     
-    // Sanitize lat/lon for filename by replacing dots with underscores
-    const sanitized_lat = try std.mem.replace(u8, allocator, lat, ".", "_");
+    const sanitized_lat = try sanitizeFilename(allocator, lat);
     defer allocator.free(sanitized_lat);
-    const sanitized_lon = try std.mem.replace(u8, allocator, lon, ".", "_");
+    const sanitized_lon = try sanitizeFilename(allocator, lon);
     defer allocator.free(sanitized_lon);
 
     const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ sanitized_lat, sanitized_lon });
