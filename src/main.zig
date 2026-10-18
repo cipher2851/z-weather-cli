@@ -130,6 +130,32 @@ fn sanitizeFilename(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return result.toOwnedSlice();
 }
 
+/// Periodically clean up old cache files
+fn cleanupCache(allocator: std.mem.Allocator) void {
+    var dir = std.fs.cwd().openDir(".", .{ .iterate = true });
+    if (dir) |d| {
+        defer d.close();
+        var iter = d.iterate();
+        while (iter.next() ) |entry| {
+            if (entry) |e| {
+                if (std.mem.startsWith(u8, e.name, ".weather_cache_")) {
+                    const file = d.openFile(e.name, .{}) catch null;
+                    if (file) |f| {
+                        defer f.close();
+                        const stat = f.stat() catch null;
+                        if (stat) |s| {
+                            const mtime = s.mtime orelse 0;
+                            if (std.time.timestamp() - mtime > 86400) { // 24 hour cleanup
+                                _ = d.deleteFile(e.name) catch {};
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -206,6 +232,10 @@ pub fn main() !void {
         }
     }
 
+    var geo_lat: ?[]u8 = null;
+    var geo_lon: ?[]u8 = null;
+    var geo_name: ?[]u8 = null;
+
     if (city_name) |city| {
         const geo_url = try std.fmt.allocPrint(allocator, "https://geocoding-api.open-meteo.com/v1/search?name={s}&count=1&language=en&format=json", .{city});
         defer allocator.free(geo_url);
@@ -258,9 +288,19 @@ pub fn main() !void {
             return;
         }
 
-        lat = try allocator.dupe(u8, found_lat);
-        lon = try allocator.dupe(u8, found_lon);
-        location_name = try allocator.dupe(u8, found_name);
+        geo_lat = try allocator.dupe(u8, found_lat);
+        geo_lon = try allocator.dupe(u8, found_lon);
+        geo_name = try allocator.dupe(u8, found_name);
+        
+        lat = geo_lat.?;
+        lon = geo_lon.?;
+        location_name = geo_name.?;
+    }
+
+    defer {
+        if (geo_lat) |l| allocator.free(l);
+        if (geo_lon) |l| allocator.free(l);
+        if (geo_name) |l| allocator.free(l);
     }
 
     // Basic coordinate validation
@@ -275,7 +315,7 @@ pub fn main() !void {
     const lon_val = std.fmt.parseFloat(f32, lon) catch {
         try stdout.print("Error: Invalid longitude format: {s}\n", .{lon});
         return;
-    };
+    }
     if (lon_val < -180 or lon_val > 180) {
         try stdout.print("Error: Longitude must be between -180 and 180.\n", .{});
         return;
@@ -505,4 +545,6 @@ pub fn main() !void {
         try stdout.print("Failed to find weather data in response. The API may have returned an unexpected format.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
     }
+
+    cleanupCache(allocator);
 }
