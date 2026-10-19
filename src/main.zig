@@ -11,6 +11,8 @@ const WeatherData = struct {
     updated: []const u8,
 
     pub fn deinit(self: WeatherData, allocator: std.mem.Allocator) void {
+        _ = self;
+        _ = allocator;
         // Only free fields that were duplicated/allocated
         // In this implementation, most are slices of the body or fixed buffers
         // But we'll handle potential allocations if they occur
@@ -26,16 +28,27 @@ fn getWeatherCondition(code: []const u8) []const u8 {
     if (std.mem.eql(u8, code, "45")) return "Foggy";
     if (std.mem.eql(u8, code, "48")) return "Rime fog";
     if (std.mem.eql(u8, code, "51")) return "Light drizzle";
+    if (std.mem.eql(u8, code, "53")) return "Moderate drizzle";
+    if (std.mem.eql(u8, code, "55")) return "Dense drizzle";
+    if (std.mem.eql(u8, code, "56")) return "Light freezing drizzle";
+    if (std.mem.eql(u8, code, "57")) return "Dense freezing drizzle";
     if (std.mem.eql(u8, code, "61")) return "Slight rain";
     if (std.mem.eql(u8, code, "63")) return "Moderate rain";
     if (std.mem.eql(u8, code, "65")) return "Heavy rain";
+    if (std.mem.eql(u8, code, "66")) return "Light freezing rain";
+    if (std.mem.eql(u8, code, "67")) return "Heavy freezing rain";
     if (std.mem.eql(u8, code, "71")) return "Slight snow";
     if (std.mem.eql(u8, code, "73")) return "Moderate snow";
     if (std.mem.eql(u8, code, "75")) return "Heavy snow";
+    if (std.mem.eql(u8, code, "77")) return "Snow grains";
     if (std.mem.eql(u8, code, "80")) return "Slight rain showers";
     if (std.mem.eql(u8, code, "81")) return "Moderate rain showers";
     if (std.mem.eql(u8, code, "82")) return "Violent rain showers";
+    if (std.mem.eql(u8, code, "85")) return "Slight snow showers";
+    if (std.mem.eql(u8, code, "86")) return "Heavy snow showers";
     if (std.mem.eql(u8, code, "95")) return "Thunderstorm";
+    if (std.mem.eql(u8, code, "96")) return "Thunderstorm with slight hail";
+    if (std.mem.eql(u8, code, "99")) return "Thunderstorm with heavy hail";
     return "Unknown";
 }
 
@@ -51,35 +64,26 @@ fn getWindDirection(degrees_str: []const u8) []const u8 {
 
 /// Formats current timestamp into a UTC string
 fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
-    const date = std.time.epoch_days(timestamp);
-    const seconds_in_day = @as(i64, @intCast(timestamp % 86400));
+    const days = @divFloor(timestamp, 86400);
+    const seconds_in_day = timestamp - days * 86400;
 
-    var year = 1970;
-    var days_remaining = date;
-    while (true) {
-        const is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0));
-        const days_in_year: i64 = if (is_leap) 366 else 365;
-        if (days_remaining < days_in_year) break;
-        days_remaining -= days_in_year;
-        year += 1;
-    }
+    // Convert days since 1970-01-01 to a civil date using Howard Hinnant's algorithm.
+    const z = days + 719468;
+    const era = if (z >= 0) @divTrunc(z, 146097) else @divFloor(z, 146097);
+    const doe = z - era * 146097;
+    const yoe = (doe - @divTrunc(doe, 1460) + @divTrunc(doe, 36524) - @divTrunc(doe, 146096)) / 365;
+    const y = yoe + era * 400;
+    const doy = doe - (365 * yoe + @divTrunc(yoe, 4) - @divTrunc(yoe, 100));
+    const mp = (5 * doy + 2) / 153;
+    const d = doy - (153 * mp + 2) / 5 + 1;
+    const m = if (mp < 10) mp + 3 else mp - 9;
+    const year = if (m <= 2) y + 1 else y;
 
-    const month_days = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-    var month: usize = 0;
-    var days_in_month_remaining = days_remaining;
-    while (month < 12) {
-        var dim = month_days[month];
-        if (month == 1 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))) dim += 1;
-        if (days_in_month_remaining < dim) break;
-        days_in_month_remaining -= dim;
-        month += 1;
-    }
-    const day = days_in_month_remaining + 1;
-    const hour = seconds_in_day / 3600;
-    const minute = (seconds_in_day % 3600) / 60;
+    const hour = @divTrunc(seconds_in_day, 3600);
+    const minute = @divTrunc(seconds_in_day % 3600, 60);
     const second = seconds_in_day % 60;
 
-    return try std.fmt.allocPrint(allocator, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{ year, month + 1, day, hour, minute, second });
+    return try std.fmt.allocPrint(allocator, "{d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2} UTC", .{ year, m, d, hour, minute, second });
 }
 
 /// Robust helper to extract value by key from simple JSON
@@ -120,11 +124,31 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
 fn sanitizeFilename(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
     errdefer result.deinit();
+    const hex = "0123456789ABCDEF";
     for (input) |c| {
         if (std.ascii.isAlphanumeric(c)) {
             try result.append(c);
         } else {
             try result.append('_');
+            try result.append(hex[c >> 4]);
+            try result.append(hex[c & 15]);
+        }
+    }
+    return result.toOwnedSlice();
+}
+
+/// Percent-encodes a string for safe use in a URL query value
+fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    errdefer result.deinit();
+    const hex = "0123456789ABCDEF";
+    for (input) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.' or c == '~') {
+            try result.append(c);
+        } else {
+            try result.append('%');
+            try result.append(hex[c >> 4]);
+            try result.append(hex[c & 15]);
         }
     }
     return result.toOwnedSlice();
@@ -177,8 +201,7 @@ pub fn main() !void {
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city "Tokyo"
-  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city \"Tokyo\"\n  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
             return;
         }
 
@@ -207,6 +230,9 @@ pub fn main() !void {
                 if (i + 1 < args.len) {
                     if (std.mem.eql(u8, args[i + 1], "F")) {
                         use_fahrenheit = true;
+                    } else if (!std.mem.eql(u8, args[i + 1], "C")) {
+                        try stdout.print("Error: --unit requires C or F.\n", .{});
+                        return;
                     }
                     i += 1;
                 } else {
@@ -237,7 +263,10 @@ pub fn main() !void {
     var geo_name: ?[]u8 = null;
 
     if (city_name) |city| {
-        const geo_url = try std.fmt.allocPrint(allocator, "https://geocoding-api.open-meteo.com/v1/search?name={s}&count=1&language=en&format=json", .{city});
+        const encoded_city = try urlEncode(allocator, city);
+        defer allocator.free(encoded_city);
+
+        const geo_url = try std.fmt.allocPrint(allocator, "https://geocoding-api.open-meteo.com/v1/search?name={s}&count=1&language=en&format=json", .{encoded_city});
         defer allocator.free(geo_url);
 
         var client = std.http.Client{ .allocator = allocator };
@@ -315,7 +344,7 @@ pub fn main() !void {
     const lon_val = std.fmt.parseFloat(f32, lon) catch {
         try stdout.print("Error: Invalid longitude format: {s}\n", .{lon});
         return;
-    }
+    };
     if (lon_val < -180 or lon_val > 180) {
         try stdout.print("Error: Longitude must be between -180 and 180.\n", .{});
         return;
@@ -334,7 +363,7 @@ pub fn main() !void {
     var body: []const u8 = "";
     var from_cache = false;
 
-    const cached_file = std.fs.cwd().openFile(cache_path, .{}, null) catch null;
+    const cached_file = std.fs.cwd().openFile(cache_path, .{}) catch null;
     if (cached_file) |file| {
         defer file.close();
         const stat = file.stat() catch null;
@@ -490,7 +519,7 @@ pub fn main() !void {
                 "\"humidity\": \"{s}\", "
                 "\"windspeed\": \"{s}\", "
                 "\"updated\": \"{s}\""
-                }}", .{ weather.location, weather.condition, weather.temp, weather.feels_like, weather.humidity, weather.wind, weather.updated });
+                "}}", .{ weather.location, weather.condition, weather.temp, weather.feels_like, weather.humidity, weather.wind, weather.updated });
             try stdout.print("\n", .{});
             return;
         }
@@ -547,4 +576,44 @@ pub fn main() !void {
     }
 
     cleanupCache(allocator);
+}
+
+test "getWeatherCondition known codes" {
+    try std.testing.expectEqualStrings("Clear sky", getWeatherCondition("0"));
+    try std.testing.expectEqualStrings("Thunderstorm with heavy hail", getWeatherCondition("99"));
+    try std.testing.expectEqualStrings("Unknown", getWeatherCondition("123"));
+}
+
+test "getWindDirection known values" {
+    try std.testing.expectEqualStrings("N", getWindDirection("0"));
+    try std.testing.expectEqualStrings("NE", getWindDirection("45"));
+    try std.testing.expectEqualStrings("N", getWindDirection("360"));
+}
+
+test "extractValue reads simple JSON values" {
+    const body = "{\"current_weather\":{\"temperature\":12.3,\"windspeed\":4.5},\"relative_humidity_2m\":60}";
+    try std.testing.expectEqualStrings("12.3", extractValue(body, "temperature"));
+    try std.testing.expectEqualStrings("4.5", extractValue(body, "windspeed"));
+    try std.testing.expectEqualStrings("60", extractValue(body, "relative_humidity_2m"));
+}
+
+test "sanitizeFilename is unambiguous" {
+    const allocator = std.testing.allocator;
+    const result = try sanitizeFilename(allocator, "12.34,-56.78");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("12_2E34_2C_2D56_2E78", result);
+}
+
+test "formatUtcTime formats epoch" {
+    const allocator = std.testing.allocator;
+    const result = try formatUtcTime(allocator, 0);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("1970-01-01 00:00:00 UTC", result);
+}
+
+test "formatUtcTime formats a known date" {
+    const allocator = std.testing.allocator;
+    const result = try formatUtcTime(allocator, 1704067200);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("2024-01-01 00:00:00 UTC", result);
 }
