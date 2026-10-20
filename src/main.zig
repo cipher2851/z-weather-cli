@@ -156,26 +156,26 @@ fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 
 /// Periodically clean up old cache files
 fn cleanupCache(allocator: std.mem.Allocator) void {
-    var dir = std.fs.cwd().openDir(".", .{ .iterate = true });
-    if (dir) |d| {
-        defer d.close();
-        var iter = d.iterate();
-        while (iter.next() ) |entry| {
-            if (entry) |e| {
-                if (std.mem.startsWith(u8, e.name, ".weather_cache_")) {
-                    const file = d.openFile(e.name, .{}) catch null;
-                    if (file) |f| {
-                        defer f.close();
-                        const stat = f.stat() catch null;
-                        if (stat) |s| {
-                            const mtime = s.mtime orelse 0;
-                            if (std.time.timestamp() - mtime > 86400) { // 24 hour cleanup
-                                _ = d.deleteFile(e.name) catch {};
-                            }
-                        }
-                    }
-                }
-            }
+    _ = allocator;
+
+    var dir = std.fs.cwd().openDir(".", .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    var iter = dir.iterate();
+    while (true) {
+        const maybe_entry = iter.next() catch break;
+        const entry = maybe_entry orelse break;
+
+        if (!std.mem.startsWith(u8, entry.name, ".weather_cache_")) continue;
+
+        const file = dir.openFile(entry.name, .{}) catch continue;
+        defer file.close();
+
+        const stat = file.stat() catch continue;
+        const mtime_ns = stat.mtime orelse 0;
+        const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
+        if (std.time.timestamp() - mtime_s > 86400) { // 24 hour cleanup
+            _ = dir.deleteFile(entry.name) catch {};
         }
     }
 }
@@ -368,9 +368,10 @@ pub fn main() !void {
         defer file.close();
         const stat = file.stat() catch null;
         if (stat) |s| {
-            const mtime = s.mtime orelse 0;
+            const mtime_ns = s.mtime orelse 0;
+            const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
             const now = std.time.timestamp();
-            if (now - mtime < 1800) { // 30 minutes cache
+            if (now - mtime_s < 1800) { // 30 minutes cache
                 const size = @intCast(s.size);
                 const buf = try allocator.alloc(u8, size);
                 _ = try file.readAll(buf);
