@@ -441,8 +441,10 @@ pub fn main() !void {
             if (now - mtime_s < 1800) {
                 const size = @intCast(s.size);
                 const buf = try allocator.alloc(u8, size);
-                _ = try file.readAll(buf);
-                body = buf;
+                const n = try file.readAll(buf);
+                const data = try allocator.dupe(u8, buf[0..n]);
+                allocator.free(buf);
+                body = data;
                 from_cache = true;
             }
         }
@@ -530,28 +532,30 @@ pub fn main() !void {
         const time_str_fmt = try formatUtcTime(allocator, std.time.timestamp());
         defer allocator.free(time_str_fmt);
 
-        var temp_display: [32]u8 = undefined;
+        var temp_display_buf: [32]u8 = undefined;
+        var temp_display: []const u8 = undefined;
         if (use_fahrenheit) {
             if (std.fmt.parseFloat(f32, temp_str)) |celsius| {
                 const fahrenheit = (celsius * 9 / 5) + 32;
-                _ = try std.fmt.bufPrint(&temp_display, "{d:.1} °F", .{fahrenheit});
+                temp_display = try std.fmt.bufPrint(&temp_display_buf, "{d:.1} °F", .{fahrenheit});
             } else {
-                _ = try std.fmt.bufPrint(&temp_display, "{s} °F (err)", .{temp_str});
+                temp_display = try std.fmt.bufPrint(&temp_display_buf, "{s} °F (err)", .{temp_str});
             }
         } else {
-            _ = try std.fmt.bufPrint(&temp_display, "{s} °C", .{temp_str});
+            temp_display = try std.fmt.bufPrint(&temp_display_buf, "{s} °C", .{temp_str});
         }
 
-        var apparent_display: [32]u8 = undefined;
+        var apparent_display_buf: [32]u8 = undefined;
+        var apparent_display: []const u8 = undefined;
         if (use_fahrenheit) {
             if (std.fmt.parseFloat(f32, apparent_temp_str)) |celsius| {
                 const fahrenheit = (celsius * 9 / 5) + 32;
-                _ = try std.fmt.bufPrint(&apparent_display, "{d:.1} °F", .{fahrenheit});
+                apparent_display = try std.fmt.bufPrint(&apparent_display_buf, "{d:.1} °F", .{fahrenheit});
             } else {
-                _ = try std.fmt.bufPrint(&apparent_display, "{s} °F (err)", .{apparent_temp_str});
+                apparent_display = try std.fmt.bufPrint(&apparent_display_buf, "{s} °F (err)", .{apparent_temp_str});
             }
         } else {
-            _ = try std.fmt.bufPrint(&apparent_display, "{s} °C", .{apparent_temp_str});
+            apparent_display = try std.fmt.bufPrint(&apparent_display_buf, "{s} °C", .{apparent_temp_str});
         }
 
         var wind_final_buf: [64]u8 = undefined;
@@ -574,8 +578,8 @@ pub fn main() !void {
         const weather = WeatherData{
             .location = location_name,
             .condition = getWeatherCondition(code),
-            .temp = &temp_display,
-            .feels_like = &apparent_display,
+            .temp = temp_display,
+            .feels_like = apparent_display,
             .humidity = humid_formatted,
             .wind = wind_final_slice,
             .updated = time_str_fmt,
