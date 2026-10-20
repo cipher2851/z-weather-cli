@@ -3,7 +3,7 @@
 A simple weather CLI written in Zig.
 
 ## Prerequisites
-- Zig compiler (0.11.0 or newer)
+- Zig compiler (0.12.0)
 
 ## Usage
 ```bash

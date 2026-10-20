@@ -87,13 +87,20 @@ fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
     var search_key_buf: [128]u8 = undefined;
-    const search_key = std.fmt.bufPrint(&search_key_buf, "\"{s}\":", .{key}) catch return "";
+    const search_key = std.fmt.bufPrint(&search_key_buf, "\"{s}\"", .{key}) catch return "";
 
     const idx = std.mem.indexOf(u8, body, search_key) orelse return "";
     var val_start = idx + search_key.len;
 
-    while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r' or body[val_start] == ':')) {
+    while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r')) {
         val_start += 1;
+    }
+
+    if (val_start < body.len and body[val_start] == ':') {
+        val_start += 1;
+        while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r')) {
+            val_start += 1;
+        }
     }
 
     if (val_start >= body.len) return "";
@@ -679,6 +686,13 @@ test "getWindDirection known values" {
 
 test "extractValue reads simple JSON values" {
     const body = "{\"current_weather\":{\"temperature\":12.3,\"windspeed\":4.5},\"relative_humidity_2m\":60}";
+    try std.testing.expectEqualStrings("12.3", extractValue(body, "temperature"));
+    try std.testing.expectEqualStrings("4.5", extractValue(body, "windspeed"));
+    try std.testing.expectEqualStrings("60", extractValue(body, "relative_humidity_2m"));
+}
+
+test "extractValue tolerates spaces around colons" {
+    const body = "{ \"current_weather\" : { \"temperature\" : 12.3 , \"windspeed\" : 4.5 } , \"relative_humidity_2m\" : 60 }";
     try std.testing.expectEqualStrings("12.3", extractValue(body, "temperature"));
     try std.testing.expectEqualStrings("4.5", extractValue(body, "windspeed"));
     try std.testing.expectEqualStrings("60", extractValue(body, "relative_humidity_2m"));
