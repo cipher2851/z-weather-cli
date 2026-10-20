@@ -13,9 +13,6 @@ const WeatherData = struct {
     pub fn deinit(self: WeatherData, allocator: std.mem.Allocator) void {
         _ = self;
         _ = allocator;
-        // Only free fields that were duplicated/allocated
-        // In this implementation, most are slices of the body or fixed buffers
-        // But we'll handle potential allocations if they occur
     }
 };
 
@@ -55,6 +52,7 @@ fn getWeatherCondition(code: []const u8) []const u8 {
 /// Maps degrees to compass direction
 fn getWindDirection(degrees_str: []const u8) []const u8 {
     if (std.fmt.parseFloat(f32, degrees_str)) |deg| {
+        if (!std.math.isFinite(deg)) return "Unknown";
         const dirs = [_][]const u8{ "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
         const normalized = @mod(deg, 360.0);
         const idx = @as(usize, @intFromFloat((normalized + 22.5) / 45.0));
@@ -68,7 +66,6 @@ fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
     const days = @divFloor(timestamp, 86400);
     const seconds_in_day = timestamp - days * 86400;
 
-    // Convert days since 1970-01-01 to a civil date using Howard Hinnant's algorithm.
     const z = days + 719468;
     const era = if (z >= 0) @divTrunc(z, 146097) else @divFloor(z, 146097);
     const doe = z - era * 146097;
@@ -95,7 +92,6 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
     const idx = std.mem.indexOf(u8, body, search_key) orelse return "";
     var val_start = idx + search_key.len;
 
-    // Skip whitespace and colons
     while (val_start < body.len and (body[val_start] == ' ' or body[val_start] == '\t' or body[val_start] == '\n' or body[val_start] == '\r' or body[val_start] == ':')) {
         val_start += 1;
     }
@@ -110,11 +106,9 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
     }
 
     var result = body[val_start..val_end];
-    // Trim trailing spaces
     while (result.len > 0 and (result[result.len - 1] == ' ' or result[result.len - 1] == '\t')) {
         result = result[0..result.len - 1];
     }
-    // Trim quotes for string values
     if (result.len >= 2 and result[0] == '"' and result[result.len - 1] == '"') {
         result = result[1..result.len - 1];
     }
@@ -155,6 +149,58 @@ fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return result.toOwnedSlice();
 }
 
+/// Escapes a string for safe inclusion in a JSON string value
+fn jsonEscape(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    errdefer result.deinit();
+    const hex = "0123456789abcdef";
+    for (input) |c| {
+        switch (c) {
+            '"' => {
+                try result.append('\\');
+                try result.append('"');
+            },
+            '\\' => {
+                try result.append('\\');
+                try result.append('\\');
+            },
+            '\n' => {
+                try result.append('\\');
+                try result.append('n');
+            },
+            '\r' => {
+                try result.append('\\');
+                try result.append('r');
+            },
+            '\t' => {
+                try result.append('\\');
+                try result.append('t');
+            },
+            0x08 => {
+                try result.append('\\');
+                try result.append('b');
+            },
+            0x0C => {
+                try result.append('\\');
+                try result.append('f');
+            },
+            else => {
+                if (c < 0x20) {
+                    try result.append('\\');
+                    try result.append('u');
+                    try result.append('0');
+                    try result.append('0');
+                    try result.append(hex[c >> 4]);
+                    try result.append(hex[c & 15]);
+                } else {
+                    try result.append(c);
+                }
+            },
+        }
+    }
+    return result.toOwnedSlice();
+}
+
 /// Periodically clean up old cache files
 fn cleanupCache(allocator: std.mem.Allocator) void {
     _ = allocator;
@@ -181,7 +227,7 @@ fn cleanupCache(allocator: std.mem.Allocator) void {
             break :blk raw;
         };
         const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
-        if (std.time.timestamp() - mtime_s > 86400) { // 24 hour cleanup
+        if (std.time.timestamp() - mtime_s > 86400) {
             _ = dir.deleteFile(entry.name) catch {};
         }
     }
@@ -253,8 +299,7 @@ pub fn main() !void {
                 verbose = true;
             } else if (std.mem.eql(u8, arg, "--silent")) {
                 silent = true;
-            } else if (i == 1 && args.len >= 3 && !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
-                // Positional arguments for lat/lon
+            } else if (i == 1 and args.len >= 3 and !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 lat = args[1];
                 lon = args[2];
                 location_name = "specified coordinates";
@@ -270,6 +315,12 @@ pub fn main() !void {
     var geo_lon: ?[]u8 = null;
     var geo_name: ?[]u8 = null;
 
+    defer {
+        if (geo_lat) |l| allocator.free(l);
+        if (geo_lon) |l| allocator.free(l);
+        if (geo_name) |l| allocator.free(l);
+    }
+
     if (city_name) |city| {
         const encoded_city = try urlEncode(allocator, city);
         defer allocator.free(encoded_city);
@@ -283,9 +334,9 @@ pub fn main() !void {
         defer client.deinit();
 
         var server_header_buffer: [1024]u8 = undefined;
-        const request = client.open(.GET, geo_uri, .{ 
-            .response_headers_buffer = &server_header_buffer, 
-            .timeout = 10 * std.time.ns_per_s, 
+        const request = client.open(.GET, geo_uri, .{
+            .response_headers_buffer = &server_header_buffer,
+            .timeout = 10 * std.time.ns_per_s,
         }) catch |err| {
             try stdout.print("Network Error: Geocoding failed. {any}\n", .{err});
             return;
@@ -307,7 +358,7 @@ pub fn main() !void {
         };
 
         if (request.response.status != .ok) {
-            try stdout.print("API Error: Geocoding returned status code {d}.\n", .{ @intFromEnum(request.response.status) });
+            try stdout.print("API Error: Geocoding returned status code {d}.\n", .{@intFromEnum(request.response.status)});
             return;
         }
 
@@ -339,19 +390,12 @@ pub fn main() !void {
         geo_lat = try allocator.dupe(u8, found_lat);
         geo_lon = try allocator.dupe(u8, found_lon);
         geo_name = try allocator.dupe(u8, if (found_name.len > 0) found_name else city);
-        
+
         lat = geo_lat.?;
         lon = geo_lon.?;
         location_name = geo_name.?;
     }
 
-    defer {
-        if (geo_lat) |l| allocator.free(l);
-        if (geo_lon) |l| allocator.free(l);
-        if (geo_name) |l| allocator.free(l);
-    }
-
-    // Basic coordinate validation
     const lat_val = std.fmt.parseFloat(f32, lat) catch {
         try stdout.print("Error: Invalid latitude format: {s}\n", .{lat});
         return;
@@ -369,15 +413,14 @@ pub fn main() !void {
         return;
     }
 
-    // Cache logic
     const sanitized_lat = try sanitizeFilename(allocator, lat);
     defer allocator.free(sanitized_lat);
     const sanitized_lon = try sanitizeFilename(allocator, lon);
     defer allocator.free(sanitized_lon);
 
-    const cache_path = try std.fmt.allocPrint(allocator, ".weather_cache_{s}_{s}", .{ sanitized_lat, sanitized_lon });
+    const cache_path = try std.fmt.allocPrint(allocator, ".weather_cache_{s}_{s}", .{sanitized_lat, sanitized_lon});
     defer allocator.free(cache_path);
-    
+
     var body: []const u8 = "";
     var from_cache = false;
 
@@ -395,7 +438,7 @@ pub fn main() !void {
             };
             const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
             const now = std.time.timestamp();
-            if (now - mtime_s < 1800) { // 30 minutes cache
+            if (now - mtime_s < 1800) {
                 const size = @intCast(s.size);
                 const buf = try allocator.alloc(u8, size);
                 _ = try file.readAll(buf);
@@ -406,29 +449,27 @@ pub fn main() !void {
     }
 
     if (!from_cache) {
-        const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{ lat, lon });
+        const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{lat, lon});
         defer allocator.free(url);
 
         const weather_uri = try std.Uri.parse(url);
 
-        if (!json_output and !silent) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+        if (!json_output and !silent) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{location_name, lat, lon});
 
         var client = std.http.Client{ .allocator = allocator };
         defer client.deinit();
 
         var server_header_buffer: [1024]u8 = undefined;
-        
-        const request = client.open(.GET, weather_uri, .{ 
-            .response_headers_buffer = &server_header_buffer, 
-            // Set a 10 second timeout for the request
-            .timeout = 10 * std.time.ns_per_s, 
+
+        const request = client.open(.GET, weather_uri, .{
+            .response_headers_buffer = &server_header_buffer,
+            .timeout = 10 * std.time.ns_per_s,
         }) catch |err| {
             try stdout.print("Network Error: Could not open connection. {any}\n", .{err});
             return;
         };
         defer request.deinit();
 
-        // Set a User-Agent as requested by Open-Meteo
         request.headers.append("User-Agent", "z-weather-cli/1.0 (Zig CLI utility)") catch {};
 
         request.send() catch |err| {
@@ -445,7 +486,7 @@ pub fn main() !void {
         };
 
         if (request.response.status != .ok) {
-            try stdout.print("API Error: Received status code {d}. Please verify coordinates or API availability.\n", .{ @intFromEnum(request.response.status) });
+            try stdout.print("API Error: Received status code {d}. Please verify coordinates or API availability.\n", .{@intFromEnum(request.response.status)});
             return;
         }
 
@@ -457,19 +498,18 @@ pub fn main() !void {
         }
 
         body = try allocator.dupe(u8, response_body.items);
-        
+
         if (verbose) {
             try stdout.print("\n[Verbose] Weather API Response:\n{s}\n", .{body});
         }
 
-        // Save to cache
         const cache_file = std.fs.cwd().createFile(cache_path, .{}) catch null;
         if (cache_file) |f| {
             defer f.close();
             _ = f.writeAll(body) catch {};
         }
     } else if (!json_output and !silent) {
-        try stdout.print("Using cached data for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
+        try stdout.print("Using cached data for {s} ({s}, {s})...\n", .{location_name, lat, lon});
     }
 
     defer allocator.free(body);
@@ -513,7 +553,7 @@ pub fn main() !void {
         } else {
             _ = try std.fmt.bufPrint(&apparent_display, "{s} °C", .{apparent_temp_str});
         }
-        
+
         var wind_final_buf: [64]u8 = undefined;
         var wind_final_slice: []const u8 = "";
         const wind_dir = getWindDirection(wind_dir_str);
@@ -542,20 +582,34 @@ pub fn main() !void {
         };
 
         if (json_output) {
-            try stdout.print("{{" + 
-                "\"location\": \"{s}\", "
-                "\"condition\": \"{s}\", "
-                "\"temperature\": \"{s}\", "
-                "\"feels_like\": \"{s}\", "
-                "\"humidity\": \"{s}\", "
-                "\"windspeed\": \"{s}\", "
-                "\"updated\": \"{s}\""
-                "}}", .{ weather.location, weather.condition, weather.temp, weather.feels_like, weather.humidity, weather.wind, weather.updated });
+            const esc_location = try jsonEscape(allocator, weather.location);
+            defer allocator.free(esc_location);
+            const esc_condition = try jsonEscape(allocator, weather.condition);
+            defer allocator.free(esc_condition);
+            const esc_temp = try jsonEscape(allocator, weather.temp);
+            defer allocator.free(esc_temp);
+            const esc_feels_like = try jsonEscape(allocator, weather.feels_like);
+            defer allocator.free(esc_feels_like);
+            const esc_humidity = try jsonEscape(allocator, weather.humidity);
+            defer allocator.free(esc_humidity);
+            const esc_wind = try jsonEscape(allocator, weather.wind);
+            defer allocator.free(esc_wind);
+            const esc_updated = try jsonEscape(allocator, weather.updated);
+            defer allocator.free(esc_updated);
+
+            try stdout.print("{{" ++
+                "\"location\": \"{s}\", " ++
+                "\"condition\": \"{s}\", " ++
+                "\"temperature\": \"{s}\", " ++
+                "\"feels_like\": \"{s}\", " ++
+                "\"humidity\": \"{s}\", " ++
+                "\"windspeed\": \"{s}\", " ++
+                "\"updated\": \"{s}\"" ++
+                "}}", .{esc_location, esc_condition, esc_temp, esc_feels_like, esc_humidity, esc_wind, esc_updated});
             try stdout.print("\n", .{});
             return;
         }
 
-        // Calculate dynamic width
         var max_val_len = weather.location.len;
         if (weather.condition.len > max_val_len) max_val_len = weather.condition.len;
         if (weather.temp.len > max_val_len) max_val_len = weather.temp.len;
@@ -563,19 +617,19 @@ pub fn main() !void {
         if (weather.updated.len > max_val_len) max_val_len = weather.updated.len;
         if (weather.humidity.len > max_val_len) max_val_len = weather.humidity.len;
         if (weather.feels_like.len > max_val_len) max_val_len = weather.feels_like.len;
-        
+
         const inner_width = if (max_val_len < 24) 24 else max_val_len;
         const total_width = inner_width + 2;
-        
+
         try stdout.print("\n┌", .{});
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┐\n", .{});
-        
+
         try stdout.print("│", .{});
         const header_text = "WEATHER REPORT";
         const left_padding = (total_width - header_text.len) / 2;
         const right_padding = total_width - header_text.len - left_padding;
-        
+
         for (0..left_padding) |_| try stdout.print(" ", .{});
         try stdout.print("{s}", .{header_text});
         for (0..right_padding) |_| try stdout.print(" ", .{});
@@ -585,19 +639,19 @@ pub fn main() !void {
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
-        try stdout.print("│ Location    : {s:<{d}} │\n", .{ weather.location, inner_width });
-        
+        try stdout.print("│ Location    : {s:<{d}} │\n", .{weather.location, inner_width});
+
         try stdout.print("├", .{});
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┤\n", .{});
 
-        try stdout.print("│ Condition   : {s:<{d}} │\n", .{ weather.condition, inner_width });
-        try stdout.print("│ Temperature : {s:<{d}} │\n", .{ weather.temp, inner_width });
-        try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{ weather.feels_like, inner_width });
-        try stdout.print("│ Humidity    : {s:<{d}} │\n", .{ weather.humidity, inner_width });
-        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{ weather.wind, inner_width });
-        try stdout.print("│ Updated     : {s:<{d}} │\n", .{ weather.updated, inner_width });
-        
+        try stdout.print("│ Condition   : {s:<{d}} │\n", .{weather.condition, inner_width});
+        try stdout.print("│ Temperature : {s:<{d}} │\n", .{weather.temp, inner_width});
+        try stdout.print("│ Feels Like  : {s:<{d}} │\n", .{weather.feels_like, inner_width});
+        try stdout.print("│ Humidity    : {s:<{d}} │\n", .{weather.humidity, inner_width});
+        try stdout.print("│ Windspeed   : {s:<{d}} │\n", .{weather.wind, inner_width});
+        try stdout.print("│ Updated     : {s:<{d}} │\n", .{weather.updated, inner_width});
+
         try stdout.print("└", .{});
         for (0..total_width) |_| try stdout.print("─", .{});
         try stdout.print("┘\n", .{});
@@ -660,4 +714,11 @@ test "getWindDirection wraps around the compass" {
     try std.testing.expectEqualStrings("N", getWindDirection("360"));
     try std.testing.expectEqualStrings("NW", getWindDirection("315"));
     try std.testing.expectEqualStrings("Unknown", getWindDirection("not-a-number"));
+}
+
+test "jsonEscape escapes JSON string values" {
+    const allocator = std.testing.allocator;
+    const result = try jsonEscape(allocator, "a\"b\\c\nd\te");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd\\te", result);
 }
