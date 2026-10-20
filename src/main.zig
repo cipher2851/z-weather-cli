@@ -55,9 +55,10 @@ fn getWeatherCondition(code: []const u8) []const u8 {
 /// Maps degrees to compass direction
 fn getWindDirection(degrees_str: []const u8) []const u8 {
     if (std.fmt.parseFloat(f32, degrees_str)) |deg| {
-        const dirs = [_][]const u8{ "N", "NE", "E", "SE", "S", "SW", "W", "NW", "N" };
-        const idx = @as(usize, @intCast((deg + 22.5) / 45.0));
-        if (idx < dirs.len) return dirs[idx];
+        const dirs = [_][]const u8{ "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+        const normalized = @mod(deg, 360.0);
+        const idx = @as(usize, @intCast((normalized + 22.5) / 45.0));
+        return dirs[idx % dirs.len];
     }
     return "Unknown";
 }
@@ -88,7 +89,7 @@ fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
 
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
-    var search_key_buf: [64]u8 = undefined;
+    var search_key_buf: [128]u8 = undefined;
     const search_key = std.fmt.bufPrint(&search_key_buf, "\"{s}\":", .{key}) catch return "";
 
     const idx = std.mem.indexOf(u8, body, search_key) orelse return "";
@@ -184,6 +185,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    defer cleanupCache(allocator);
 
     const stdout = std.io.getStdOut().writer();
 
@@ -319,7 +321,7 @@ pub fn main() !void {
 
         geo_lat = try allocator.dupe(u8, found_lat);
         geo_lon = try allocator.dupe(u8, found_lon);
-        geo_name = try allocator.dupe(u8, found_name);
+        geo_name = try allocator.dupe(u8, if (found_name.len > 0) found_name else city);
         
         lat = geo_lat.?;
         lon = geo_lon.?;
@@ -351,14 +353,13 @@ pub fn main() !void {
     }
 
     // Cache logic
-    var cache_path_buf: [128]u8 = undefined;
-    
     const sanitized_lat = try sanitizeFilename(allocator, lat);
     defer allocator.free(sanitized_lat);
     const sanitized_lon = try sanitizeFilename(allocator, lon);
     defer allocator.free(sanitized_lon);
 
-    const cache_path = try std.fmt.bufPrint(&cache_path_buf, ".weather_cache_{s}_{s}", .{ sanitized_lat, sanitized_lon });
+    const cache_path = try std.fmt.allocPrint(allocator, ".weather_cache_{s}_{s}", .{ sanitized_lat, sanitized_lon });
+    defer allocator.free(cache_path);
     
     var body: []const u8 = "";
     var from_cache = false;
@@ -575,8 +576,6 @@ pub fn main() !void {
         try stdout.print("Failed to find weather data in response. The API may have returned an unexpected format.\n", .{});
         try stdout.print("Response: {s}\n", .{body});
     }
-
-    cleanupCache(allocator);
 }
 
 test "getWeatherCondition known codes" {
@@ -617,4 +616,19 @@ test "formatUtcTime formats a known date" {
     const result = try formatUtcTime(allocator, 1704067200);
     defer allocator.free(result);
     try std.testing.expectEqualStrings("2024-01-01 00:00:00 UTC", result);
+}
+
+test "urlEncode encodes reserved characters" {
+    const allocator = std.testing.allocator;
+    const result = try urlEncode(allocator, "New York!");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("New%20York%21", result);
+}
+
+test "getWindDirection wraps around the compass" {
+    try std.testing.expectEqualStrings("N", getWindDirection("0"));
+    try std.testing.expectEqualStrings("NE", getWindDirection("45"));
+    try std.testing.expectEqualStrings("N", getWindDirection("360"));
+    try std.testing.expectEqualStrings("NW", getWindDirection("315"));
+    try std.testing.expectEqualStrings("Unknown", getWindDirection("not-a-number"));
 }
