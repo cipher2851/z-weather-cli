@@ -57,7 +57,7 @@ fn getWindDirection(degrees_str: []const u8) []const u8 {
     if (std.fmt.parseFloat(f32, degrees_str)) |deg| {
         const dirs = [_][]const u8{ "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
         const normalized = @mod(deg, 360.0);
-        const idx = @as(usize, @intCast((normalized + 22.5) / 45.0));
+        const idx = @as(usize, @intFromFloat((normalized + 22.5) / 45.0));
         return dirs[idx % dirs.len];
     }
     return "Unknown";
@@ -173,7 +173,13 @@ fn cleanupCache(allocator: std.mem.Allocator) void {
         defer file.close();
 
         const stat = file.stat() catch continue;
-        const mtime_ns = stat.mtime orelse 0;
+        const mtime_ns = blk: {
+            const raw = stat.mtime;
+            if (@typeInfo(@TypeOf(raw)) == .Optional) {
+                break :blk raw orelse 0;
+            }
+            break :blk raw;
+        };
         const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
         if (std.time.timestamp() - mtime_s > 86400) { // 24 hour cleanup
             _ = dir.deleteFile(entry.name) catch {};
@@ -271,11 +277,13 @@ pub fn main() !void {
         const geo_url = try std.fmt.allocPrint(allocator, "https://geocoding-api.open-meteo.com/v1/search?name={s}&count=1&language=en&format=json", .{encoded_city});
         defer allocator.free(geo_url);
 
+        const geo_uri = try std.Uri.parse(geo_url);
+
         var client = std.http.Client{ .allocator = allocator };
         defer client.deinit();
 
         var server_header_buffer: [1024]u8 = undefined;
-        const request = client.open(.GET, geo_url, .{ 
+        const request = client.open(.GET, geo_uri, .{ 
             .response_headers_buffer = &server_header_buffer, 
             .timeout = 10 * std.time.ns_per_s, 
         }) catch |err| {
@@ -289,10 +297,19 @@ pub fn main() !void {
             try stdout.print("Network Error: Failed to send geocoding request. {any}\n", .{err});
             return;
         };
+        request.finish() catch |err| {
+            try stdout.print("Network Error: Failed to finish geocoding request. {any}\n", .{err});
+            return;
+        };
         request.wait() catch |err| {
             try stdout.print("Network Error: Failed to wait for geocoding response. {any}\n", .{err});
             return;
         };
+
+        if (request.response.status != .ok) {
+            try stdout.print("API Error: Geocoding returned status code {d}.\n", .{ @intFromEnum(request.response.status) });
+            return;
+        }
 
         var geo_body = std.ArrayList(u8).init(allocator);
         defer geo_body.deinit();
@@ -369,7 +386,13 @@ pub fn main() !void {
         defer file.close();
         const stat = file.stat() catch null;
         if (stat) |s| {
-            const mtime_ns = s.mtime orelse 0;
+            const mtime_ns = blk: {
+                const raw = s.mtime;
+                if (@typeInfo(@TypeOf(raw)) == .Optional) {
+                    break :blk raw orelse 0;
+                }
+                break :blk raw;
+            };
             const mtime_s = @divTrunc(mtime_ns, std.time.ns_per_s);
             const now = std.time.timestamp();
             if (now - mtime_s < 1800) { // 30 minutes cache
@@ -386,6 +409,8 @@ pub fn main() !void {
         const url = try std.fmt.allocPrint(allocator, "https://api.open-meteo.com/v1/forecast?latitude={s}&longitude={s}&current_weather=true&current=relative_humidity_2m,apparent_temperature", .{ lat, lon });
         defer allocator.free(url);
 
+        const weather_uri = try std.Uri.parse(url);
+
         if (!json_output and !silent) try stdout.print("Fetching current weather for {s} ({s}, {s})...\n", .{ location_name, lat, lon });
 
         var client = std.http.Client{ .allocator = allocator };
@@ -393,7 +418,7 @@ pub fn main() !void {
 
         var server_header_buffer: [1024]u8 = undefined;
         
-        const request = client.open(.GET, url, .{ 
+        const request = client.open(.GET, weather_uri, .{ 
             .response_headers_buffer = &server_header_buffer, 
             // Set a 10 second timeout for the request
             .timeout = 10 * std.time.ns_per_s, 
@@ -408,6 +433,10 @@ pub fn main() !void {
 
         request.send() catch |err| {
             try stdout.print("Network Error: Failed to send request. {any}\n", .{err});
+            return;
+        };
+        request.finish() catch |err| {
+            try stdout.print("Network Error: Failed to finish request. {any}\n", .{err});
             return;
         };
         request.wait() catch |err| {
