@@ -707,6 +707,12 @@ test "extractValue tolerates spaces around colons" {
     try std.testing.expectEqualStrings("60", extractValue(body, "relative_humidity_2m"));
 }
 
+test "extractValue reads quoted string values" {
+    const body = "{\"location\":\"Berlin\",\"condition\":\"Clear sky\"}";
+    try std.testing.expectEqualStrings("Berlin", extractValue(body, "location"));
+    try std.testing.expectEqualStrings("Clear sky", extractValue(body, "condition"));
+}
+
 test "sanitizeFilename is unambiguous" {
     const allocator = std.testing.allocator;
     const result = try sanitizeFilename(allocator, "12.34,-56.78");
