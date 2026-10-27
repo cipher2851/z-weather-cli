@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const VERSION = "1.0.0";
+
 /// WeatherData holds the processed weather information
 const WeatherData = struct {
     location: []const u8,
@@ -262,7 +264,11 @@ pub fn main() !void {
 
     if (args.len > 1) {
         if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h")) {
-            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city \"Tokyo\"\n  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
+            try stdout.print("Usage: z-weather-cli [options]\n\nOptions:\n  --city <name>       Fetch weather for a city name\n  --lat <lat> <lon>    Specify latitude and longitude\n  --unit <C|F>         Temperature unit (C for Celsius, F for Fahrenheit)\n  --json               Output in JSON format\n  --verbose            Print raw API responses\n  --silent              Suppress status messages\n  --version            Print version and exit\n  --help, -h           Show this help message\n\nExample:\n  z-weather-cli --city \"Tokyo\"\n  z-weather-cli --lat 40.71 -74.00 --unit F\n", .{});
+            return;
+        }
+        if (std.mem.eql(u8, args[1], "--version")) {
+            try stdout.print("z-weather-cli {s}\n", .{VERSION});
             return;
         }
 
@@ -306,6 +312,9 @@ pub fn main() !void {
                 verbose = true;
             } else if (std.mem.eql(u8, arg, "--silent")) {
                 silent = true;
+            } else if (std.mem.eql(u8, arg, "--version")) {
+                try stdout.print("z-weather-cli {s}\n", .{VERSION});
+                return;
             } else if (i == 1 and args.len >= 3 and !std.mem.eql(u8, arg, "--unit") and !std.mem.eql(u8, arg, "--city")) {
                 lat = args[1];
                 lon = args[2];
