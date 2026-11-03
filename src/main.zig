@@ -725,6 +725,12 @@ test "extractValue reads quoted string values" {
     try std.testing.expectEqualStrings("Clear sky", extractValue(body, "condition"));
 }
 
+test "extractValue reads quoted values with commas" {
+    const body = "{\"location\":\"Berlin, Germany\",\"condition\":\"Clear, bright sky\"}";
+    try std.testing.expectEqualStrings("Berlin, Germany", extractValue(body, "location"));
+    try std.testing.expectEqualStrings("Clear, bright sky", extractValue(body, "condition"));
+}
+
 test "sanitizeFilename is unambiguous" {
     const allocator = std.testing.allocator;
     const result = try sanitizeFilename(allocator, "12.34,-56.78");
