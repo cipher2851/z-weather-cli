@@ -108,10 +108,22 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
     if (val_start >= body.len) return "";
 
     var val_end = val_start;
-    while (val_end < body.len) {
-        const c = body[val_end];
-        if (c == ',' or c == '}' or c == ']' or c == '\n' or c == '\r') break;
-        val_end += 1;
+    if (body[val_start] == '"') {
+        var i = val_start + 1;
+        while (i < body.len) : (i += 1) {
+            if (body[i] == '\\') {
+                i += 1;
+                continue;
+            }
+            if (body[i] == '"') break;
+        }
+        val_end = if (i < body.len) i + 1 else body.len;
+    } else {
+        while (val_end < body.len) {
+            const c = body[val_end];
+            if (c == ',' or c == '}' or c == ']' or c == '\n' or c == '\r') break;
+            val_end += 1;
+        }
     }
 
     var result = body[val_start..val_end];
