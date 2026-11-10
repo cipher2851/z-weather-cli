@@ -27,6 +27,7 @@ Options:
 - `--json`: Output in JSON format
 - `--verbose`: Print raw API responses
 - `--silent`: Suppress status messages
+- `--version`: Print version and exit
 - `--help, -h`: Show help
 
 Currently, the tool fetches real-time data from the Open-Meteo API to demonstrate HTTP capabilities and JSON parsing in Zig. It provides information on temperature, wind speed, and current weather conditions.
