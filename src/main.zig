@@ -88,7 +88,7 @@ fn formatUtcTime(allocator: std.mem.Allocator, timestamp: i64) ![]u8 {
 
 /// Robust helper to extract value by key from simple JSON
 fn extractValue(body: []const u8, key: []const u8) []const u8 {
-    var search_key_buf: [128]u8 = undefined;
+    var search_key_buf: [256]u8 = undefined;
     const search_key = std.fmt.bufPrint(&search_key_buf, "\"{s}\"", .{key}) catch return "";
 
     const idx = std.mem.indexOf(u8, body, search_key) orelse return "";
@@ -107,17 +107,56 @@ fn extractValue(body: []const u8, key: []const u8) []const u8 {
 
     if (val_start >= body.len) return "";
 
-    var val_end = val_start;
+    var val_end: usize = val_start;
     if (body[val_start] == '"') {
         var i = val_start + 1;
-        while (i < body.len) : (i += 1) {
-            if (body[i] == '\\') {
+        var closed = false;
+        while (i < body.len) {
+            const c = body[i];
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == '"') {
+                closed = true;
+                i += 1;
+                break;
+            }
+            i += 1;
+        }
+        val_end = if (closed) i else body.len;
+    } else if (body[val_start] == '{' or body[val_start] == '[') {
+        var depth: usize = 1;
+        var i = val_start + 1;
+        var in_string = false;
+        while (i < body.len and depth > 0) {
+            const c = body[i];
+            if (in_string) {
+                if (c == '\\') {
+                    i += 2;
+                    continue;
+                }
+                if (c == '"') in_string = false;
                 i += 1;
                 continue;
             }
-            if (body[i] == '"') break;
+            if (c == '"') {
+                in_string = true;
+                i += 1;
+                continue;
+            }
+            if (c == '{' or c == '[') {
+                depth += 1;
+            } else if (c == '}' or c == ']') {
+                depth -= 1;
+                if (depth == 0) {
+                    i += 1;
+                    break;
+                }
+            }
+            i += 1;
         }
-        val_end = if (i < body.len) i + 1 else body.len;
+        val_end = if (i > body.len) body.len else i;
     } else {
         while (val_end < body.len) {
             const c = body[val_end];
@@ -469,10 +508,9 @@ pub fn main() !void {
             if (now - mtime_s < 1800) {
                 const size = @intCast(s.size);
                 const buf = try allocator.alloc(u8, size);
+                defer allocator.free(buf);
                 const n = try file.readAll(buf);
-                const data = try allocator.dupe(u8, buf[0..n]);
-                allocator.free(buf);
-                body = data;
+                body = try allocator.dupe(u8, buf[0..n]);
                 from_cache = true;
             }
         }
@@ -729,6 +767,13 @@ test "extractValue reads quoted values with commas" {
     const body = "{\"location\":\"Berlin, Germany\",\"condition\":\"Clear, bright sky\"}";
     try std.testing.expectEqualStrings("Berlin, Germany", extractValue(body, "location"));
     try std.testing.expectEqualStrings("Clear, bright sky", extractValue(body, "condition"));
+}
+
+test "extractValue reads array and object values with commas" {
+    const body = "{\"nums\":[1,2,3],\"obj\":{\"a\":1,\"b\":2},\"flag\":true}";
+    try std.testing.expectEqualStrings("[1,2,3]", extractValue(body, "nums"));
+    try std.testing.expectEqualStrings("{\"a\":1,\"b\":2}", extractValue(body, "obj"));
+    try std.testing.expectEqualStrings("true", extractValue(body, "flag"));
 }
 
 test "sanitizeFilename is unambiguous" {
