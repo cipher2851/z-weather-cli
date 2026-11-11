@@ -31,3 +31,18 @@ Options:
 - `--help, -h`: Show help
 
 Currently, the tool fetches real-time data from the Open-Meteo API to demonstrate HTTP capabilities and JSON parsing in Zig. It provides information on temperature, wind speed, and current weather conditions.
+
+## Development
+```bash
+# Build the executable
+zig build
+
+# Run the test suite
+zig build test
+
+# Format source files
+zig build fmt
+
+# Check formatting without modifying files
+zig build fmt-check
+```

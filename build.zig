@@ -4,11 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{ 
-        .name = "z-weather-cli", 
-        .root_source_file = .{ .path = "src/main.zig" }, 
-        .target = target, 
-        .optimize = optimize 
+    const exe = b.addExecutable(.{
+        .name = "z-weather-cli",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
     });
 
     b.installArtifact(exe);
@@ -26,4 +26,12 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    const fmt = b.addFmt(.{ .paths = &.{ "build.zig", "src" } });
+    const fmt_step = b.step("fmt", "Format source files");
+    fmt_step.dependOn(&fmt.step);
+
+    const fmt_check = b.addFmt(.{ .paths = &.{ "build.zig", "src" }, .check = true });
+    const fmt_check_step = b.step("fmt-check", "Check source formatting");
+    fmt_check_step.dependOn(&fmt_check.step);
 }
