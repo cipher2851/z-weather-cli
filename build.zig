@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(exe.step);
     const run_step = b.step("run", "Run the app", run_cmd);
-    b.main.dependOn(run_step);
 
     const unit_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
