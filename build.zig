@@ -38,4 +38,9 @@ pub fn build(b: *std.Build) void {
     const fmt_check = b.addFmt(.{ .paths = &.{ "build.zig", "src" }, .check = true });
     const fmt_check_step = b.step("fmt-check", "Check source formatting");
     fmt_check_step.dependOn(&fmt_check.step);
+
+    const ci_step = b.step("ci", "Run compilation checks, tests, and formatting checks");
+    ci_step.dependOn(check_step);
+    ci_step.dependOn(test_step);
+    ci_step.dependOn(fmt_check_step);
 }

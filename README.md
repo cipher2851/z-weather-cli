@@ -48,4 +48,7 @@ zig build fmt
 
 # Check formatting without modifying files
 zig build fmt-check
+
+# Run compilation checks, tests, and formatting checks
+zig build ci
 ```
