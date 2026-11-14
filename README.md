@@ -37,6 +37,9 @@ Currently, the tool fetches real-time data from the Open-Meteo API to demonstrat
 # Build the executable
 zig build
 
+# Check that the project compiles (without running)
+zig build check
+
 # Run the test suite
 zig build test
 

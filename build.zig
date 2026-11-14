@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(exe.step);
     const run_step = b.step("run", "Run the app", run_cmd);
+    _ = run_step;
 
     const unit_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
@@ -25,6 +26,10 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    const check_step = b.step("check", "Check that the project compiles");
+    check_step.dependOn(&exe.step);
+    check_step.dependOn(&unit_tests.step);
 
     const fmt = b.addFmt(.{ .paths = &.{ "build.zig", "src" } });
     const fmt_step = b.step("fmt", "Format source files");
