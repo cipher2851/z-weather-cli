@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const test_filter = b.option([]const u8, "test-filter", "Run only tests whose name contains this string") orelse "";
+
     const exe = b.addExecutable(.{
         .name = "z-weather-cli",
         .root_source_file = .{ .path = "src/main.zig" },
@@ -15,13 +17,14 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(exe.step);
-    const run_step = b.step("run", "Run the app", run_cmd);
-    _ = run_step;
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
 
     const unit_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
+        .filters = if (test_filter.len > 0) &.{test_filter} else &.{},
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");

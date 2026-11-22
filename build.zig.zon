@@ -1,0 +1,11 @@
+.{
+    .name = "z-weather-cli",
+    .version = "1.0.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

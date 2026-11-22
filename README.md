@@ -43,6 +43,9 @@ zig build check
 # Run the test suite
 zig build test
 
+# Run only tests matching a filter
+zig build test -Dtest-filter=foo
+
 # Format source files
 zig build fmt
 
@@ -52,3 +55,5 @@ zig build fmt-check
 # Run compilation checks, tests, and formatting checks
 zig build ci
 ```
+
+The project ships a `build.zig.zon` manifest so it can be consumed as a Zig package.
