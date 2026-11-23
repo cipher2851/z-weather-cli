@@ -54,6 +54,9 @@ zig build fmt-check
 
 # Run compilation checks, tests, and formatting checks
 zig build ci
+
+# Remove build artifacts
+zig build clean
 ```
 
 The project ships a `build.zig.zon` manifest so it can be consumed as a Zig package.

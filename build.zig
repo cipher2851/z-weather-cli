@@ -49,4 +49,8 @@ pub fn build(b: *std.Build) void {
     ci_step.dependOn(check_step);
     ci_step.dependOn(test_step);
     ci_step.dependOn(fmt_check_step);
+
+    const clean_step = b.step("clean", "Remove build artifacts");
+    const remove_zig_out = b.addRemoveDirTree(b.path("zig-out"));
+    clean_step.dependOn(&remove_zig_out.step);
 }
