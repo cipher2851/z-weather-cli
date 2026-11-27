@@ -55,4 +55,25 @@ pub fn build(b: *std.Build) void {
     clean_step.dependOn(&remove_zig_out.step);
     const remove_zig_cache = b.addRemoveDirTree(b.path(".zig-cache"));
     clean_step.dependOn(&remove_zig_cache.step);
+
+    // Optimized release builds
+    const release_fast = b.addExecutable(.{
+        .name = "z-weather-cli",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const install_release_fast = b.addInstallArtifact(release_fast, .{});
+    const release_step = b.step("release", "Build an optimized (ReleaseFast) binary");
+    release_step.dependOn(&install_release_fast.step);
+
+    const release_small = b.addExecutable(.{
+        .name = "z-weather-cli",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = .ReleaseSmall,
+    });
+    const install_release_small = b.addInstallArtifact(release_small, .{});
+    const release_small_step = b.step("release-small", "Build a size-optimized (ReleaseSmall) binary");
+    release_small_step.dependOn(&install_release_small.step);
 }

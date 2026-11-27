@@ -55,6 +55,12 @@ zig build fmt-check
 # Run compilation checks, tests, and formatting checks
 zig build ci
 
+# Build an optimized release binary
+zig build release
+
+# Build a size-optimized release binary
+zig build release-small
+
 # Remove build artifacts
 zig build clean
 ```
